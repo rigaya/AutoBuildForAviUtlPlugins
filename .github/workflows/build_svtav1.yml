@@ -3,6 +3,7 @@ name: Build svtav1
 on:
   push:
     branches: [ master, actions ]
+  workflow_dispatch:
 
 jobs:
   build:

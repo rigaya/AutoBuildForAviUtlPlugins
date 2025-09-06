@@ -3,6 +3,7 @@ name: Build x264
 on:
   push:
     branches: [ master, actions ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -71,8 +72,8 @@ jobs:
       run: |
         cd build_x264/${{ matrix.arch }}/x264
         if [ -f x264.exe ]; then
-          mv x264.exe x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
-          echo "Renamed to: x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe"
+          mv x264.exe x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
+          echo "Renamed to: x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe"
         else
           echo "Error: x264.exe not found"
           exit 1
@@ -81,6 +82,6 @@ jobs:
     - name: Upload x264 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}
-        path: x264/build_x264/${{ matrix.arch }}/x264/x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
+        name: x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}
+        path: x264/build_x264/${{ matrix.arch }}/x264/x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
         retention-days: 30

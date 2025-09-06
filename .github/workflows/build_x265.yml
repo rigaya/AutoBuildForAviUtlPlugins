@@ -3,6 +3,7 @@ name: Build x265
 on:
   push:
     branches: [ master, actions ]
+  workflow_dispatch:
 
 jobs:
   build:
