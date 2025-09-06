@@ -1,0 +1,86 @@
+name: Build x264
+
+on:
+  push:
+    branches: [ master, actions ]
+
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            msystem: MINGW32
+            mingwenv: i686
+          - arch: x64
+            msystem: CLANG64
+            mingwenv: clang-x86_64
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.msystem }}
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-${{ matrix.mingwenv }}-toolchain
+          git
+          p7zip
+          nasm
+        pacboy: >-
+          clang:p
+          lld:p
+          llvm:p
+          make:p
+          pkgconf:p
+          
+    - name: Extract test data
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        7z x test_8.7z
+        
+    - name: Build x264
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        chmod +x build_x264.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        ./build_x264.sh
+        
+    - name: Get x264 revision number
+      id: get_rev
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        cd build_x264/${{ matrix.arch }}/x264
+        REV=$(git rev-list HEAD | wc -l)
+        echo "x264_rev=${REV}" >> $GITHUB_OUTPUT
+        echo "X264 revision: ${REV}"
+        
+    - name: Rename x264 executable
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        cd build_x264/${{ matrix.arch }}/x264
+        if [ -f x264.exe ]; then
+          mv x264.exe x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
+          echo "Renamed to: x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe"
+        else
+          echo "Error: x264.exe not found"
+          exit 1
+        fi
+        
+    - name: Upload x264 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}
+        path: x264/build_x264/${{ matrix.arch }}/x264/x264_rev${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
+        retention-days: 30

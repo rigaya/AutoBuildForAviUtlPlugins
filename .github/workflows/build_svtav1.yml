@@ -1,0 +1,86 @@
+name: Build svtav1
+
+on:
+  push:
+    branches: [ master, actions ]
+
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            msystem: CLANG64
+            mingwenv: clang-x86_64
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.msystem }}
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-${{ matrix.mingwenv }}-toolchain
+          git
+          p7zip
+          nasm
+        pacboy: >-
+          clang:p
+          lld:p
+          llvm:p
+          make:p
+          pkgconf:p
+          cmake:p
+          
+    - name: Extract test data
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
+        7z x test_8.7z
+        7z x test_10.7z
+        
+    - name: Build svtav1
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        chmod +x build_svtav1.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        export YUV_PATH_10="$(pwd)/test_10.yuv"
+        ./build_svtav1.sh
+        
+    - name: Get SVT-AV1 version and rename executable
+      id: get_version
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        EXE_PATH_ORG="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp.exe"
+        if [ -f "$EXE_PATH_ORG" ]; then
+          SVTAV1_REV=$($EXE_PATH_ORG --version | cut -d ' ' -f 2)
+          SVTAV1_REV=${SVTAV1_REV:1:-10}
+          echo "svtav1_rev=${SVTAV1_REV}" >> $GITHUB_OUTPUT
+          echo "SVT-AV1 version: ${SVTAV1_REV}"
+          
+          # リネーム
+          NEW_NAME="SvtAv1EncApp_${SVTAV1_REV}.exe"
+          cp "$EXE_PATH_ORG" "build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/${NEW_NAME}"
+          echo "Renamed to: ${NEW_NAME}"
+        else
+          echo "Error: SvtAv1EncApp.exe not found at $EXE_PATH_ORG"
+          exit 1
+        fi
+        
+    - name: Upload SVT-AV1 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}
+        path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}.exe
+        retention-days: 30
+
