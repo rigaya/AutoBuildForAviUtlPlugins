@@ -1,0 +1,129 @@
+name: Create Release
+
+on:
+  workflow_run:
+    workflows: ["Build x264", "Build x265", "Build svtav1"]
+    types:
+      - completed
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Get current date and time
+      id: datetime
+      run: |
+        echo "datetime=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
+        
+    - name: Download x264 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: x264_*
+        path: artifacts/
+        merge-multiple: false
+      continue-on-error: true
+        
+    - name: Download x265 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: x265_*
+        path: artifacts/
+        merge-multiple: false
+      continue-on-error: true
+        
+    - name: Download SVT-AV1 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: SvtAv1EncApp_*
+        path: artifacts/
+        merge-multiple: false
+      continue-on-error: true
+        
+    - name: List downloaded artifacts
+      run: |
+        echo "Downloaded artifacts:"
+        find artifacts/ -type f -name "*.exe" | sort
+        
+    - name: Create zip files from executables
+      run: |
+        mkdir -p zipped_artifacts/
+        find artifacts/ -type f -name "*.exe" | while read file; do
+          filename=$(basename "$file")
+          name_without_ext="${filename%.exe}"
+          echo "Creating zip for $filename..."
+          cd "$(dirname "$file")"
+          zip "../../../zipped_artifacts/${name_without_ext}.zip" "$filename"
+          cd - > /dev/null
+        done
+        echo "Created zip files:"
+        ls -la zipped_artifacts/
+        
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: auto-build-${{ steps.datetime.outputs.datetime }}
+        release_name: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
+        body: |
+          ## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
+          
+          このリリースには以下のエンコーダが含まれています：
+          
+          ### x264
+          - Profile-Guided Optimization (PGO) によって最適化
+          - x86とx64の両方のアーキテクチャをサポート
+          
+          ### x265
+          - 8bit/10bit/12bitビット深度をサポート
+          - Profile-Guided Optimization (PGO) によって最適化
+          - x86とx64の両方のアーキテクチャをサポート
+          
+          ### SVT-AV1
+          - 最新のAV1エンコーダ
+          - Profile-Guided Optimization (PGO) によって最適化
+          - x64アーキテクチャをサポート
+          
+          ### ビルド環境
+          - Windows Server 2022
+          - MSYS2 + Clang/MinGW
+          - 最新のソースコードから自動ビルド
+          
+          **注意**: これらのバイナリは自動ビルドされたものです。使用前に十分にテストしてください。
+        draft: false
+        prerelease: false
+        
+    - name: Upload zip files to release
+      run: |
+        find zipped_artifacts/ -type f -name "*.zip" | while read file; do
+          filename=$(basename "$file")
+          echo "Uploading $filename..."
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Content-Type: application/zip" \
+               --data-binary @"$file" \
+               "${{ steps.create_release.outputs.upload_url }}?name=$filename"
+        done
+      continue-on-error: true
+        
+    - name: Summary
+      run: |
+        echo "## リリース作成完了 🎉" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**タグ名**: auto-build-${{ steps.datetime.outputs.datetime }}" >> $GITHUB_STEP_SUMMARY
+        echo "**リリース名**: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}" >> $GITHUB_STEP_SUMMARY
+        echo "**URL**: ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### アップロードされたファイル:" >> $GITHUB_STEP_SUMMARY
+        find zipped_artifacts/ -type f -name "*.zip" | while read file; do
+          echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
+        done
