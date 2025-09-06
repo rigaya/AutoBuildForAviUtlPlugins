@@ -41,8 +41,73 @@ jobs:
           make:p
           pkgconf:p
           cmake:p
+          jq:p
           
+    - name: Check for existing release
+      id: check_existing
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        # x265の現在のSHAを取得
+        git clone --depth 1 https://bitbucket.org/multicoreware/x265_git.git temp_x265
+        cd temp_x265
+        CURRENT_SHA=$(git rev-parse HEAD)
+        cd ..
+        rm -rf temp_x265
+        
+        echo "current_sha=${CURRENT_SHA}" >> $GITHUB_OUTPUT
+        echo "Current x265 SHA: ${CURRENT_SHA}"
+        
+        # 最新リリースからbuild_rev.txtをダウンロード
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest" 2>/dev/null || echo "{}")
+        BUILD_REV_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"build_rev.txt\") | .browser_download_url" 2>/dev/null || echo "")
+        
+        if [ "$BUILD_REV_URL" != "null" ] && [ "$BUILD_REV_URL" != "" ]; then
+          echo "Downloading build_rev.txt from latest release..."
+          curl -L -o build_rev.txt "${BUILD_REV_URL}"
+          
+          # x265のSHAを比較
+          EXISTING_X265_SHA=$(grep "^x265:" build_rev.txt | cut -d' ' -f2 || echo "")
+          
+          if [ "$EXISTING_X265_SHA" = "$CURRENT_SHA" ]; then
+            echo "x265 SHA matches existing release: $CURRENT_SHA"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            
+            # 既存のファイルを探してダウンロード（x64のファイル名から推測）
+            # まずx64のファイルを探してバージョンを取得
+            X64_FILE=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name | test(\"^x265_.*_x64\\.zip$\")) | .name" 2>/dev/null || echo "")
+            if [ "$X64_FILE" != "null" ] && [ "$X64_FILE" != "" ]; then
+              # ファイル名からバージョンを抽出
+              X265_VER=$(echo "$X64_FILE" | sed 's/x265_\(.*\)_x64\.zip/\1/')
+              echo "x265_ver=${X265_VER}" >> $GITHUB_OUTPUT
+              
+              EXPECTED_NAME="x265_${X265_VER}_${{ matrix.arch }}.zip"
+              ASSET_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"$EXPECTED_NAME\") | .browser_download_url" 2>/dev/null || echo "")
+              
+              if [ "$ASSET_URL" != "null" ] && [ "$ASSET_URL" != "" ]; then
+                mkdir -p build_x265/${{ matrix.arch }}/x265/build/msys/8bit/
+                curl -L -o "${EXPECTED_NAME}" "${ASSET_URL}"
+                unzip "${EXPECTED_NAME}" -d build_x265/${{ matrix.arch }}/x265/build/msys/8bit/
+                echo "Downloaded and extracted existing build: ${EXPECTED_NAME}"
+              else
+                echo "Warning: build_rev.txt indicates same SHA but file not found, will build"
+                echo "should_build=true" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "Warning: Could not find x64 file to determine version, will build"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "x265 SHA differs: existing=$EXISTING_X265_SHA, current=$CURRENT_SHA"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "No build_rev.txt found in latest release, will build"
+          echo "should_build=true" >> $GITHUB_OUTPUT
+        fi
+        
     - name: Extract test data
+      if: steps.check_existing.outputs.should_build == 'true'
       shell: msys2 {0}
       working-directory: x265
       run: |
@@ -50,6 +115,7 @@ jobs:
         7z x test_8.7z
         
     - name: Build x265
+      if: steps.check_existing.outputs.should_build == 'true'
       shell: msys2 {0}
       working-directory: x265
       run: |
@@ -62,19 +128,26 @@ jobs:
       shell: msys2 {0}
       working-directory: x265
       run: |
-        EXE_PATH="build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265.exe"
-        if [ -f "$EXE_PATH" ]; then
-          X265_VER=$($EXE_PATH --version 2>&1 | head -n 1 | sed 's/-/ /g' | awk '{print $6}')
-          echo "x265_ver=${X265_VER}" >> $GITHUB_OUTPUT
-          echo "x265 version: ${X265_VER}"
-          
-          # リネーム
-          NEW_NAME="x265_${X265_VER}_${{ matrix.arch }}.exe"
-          cp "$EXE_PATH" "build_x265/${{ matrix.arch }}/x265/build/msys/8bit/${NEW_NAME}"
-          echo "Renamed to: ${NEW_NAME}"
+        if [ "${{ steps.check_existing.outputs.should_build }}" = "true" ]; then
+          # 新しくビルドした場合
+          EXE_PATH="build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265.exe"
+          if [ -f "$EXE_PATH" ]; then
+            X265_VER=$($EXE_PATH --version 2>&1 | head -n 1 | sed 's/-/ /g' | awk '{print $6}')
+            echo "x265_ver=${X265_VER}" >> $GITHUB_OUTPUT
+            echo "x265 version: ${X265_VER}"
+            
+            # リネーム
+            NEW_NAME="x265_${X265_VER}_${{ matrix.arch }}.exe"
+            cp "$EXE_PATH" "build_x265/${{ matrix.arch }}/x265/build/msys/8bit/${NEW_NAME}"
+            echo "Renamed to: ${NEW_NAME}"
+          else
+            echo "Error: x265.exe not found at $EXE_PATH"
+            exit 1
+          fi
         else
-          echo "Error: x265.exe not found at $EXE_PATH"
-          exit 1
+          # 既存ファイルを使用する場合
+          echo "x265_ver=${{ steps.check_existing.outputs.x265_ver }}" >> $GITHUB_OUTPUT
+          echo "Using existing x265 version: ${{ steps.check_existing.outputs.x265_ver }}"
         fi
         
     - name: Upload x265 artifact
@@ -83,5 +156,26 @@ jobs:
         name: x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}
         path: x265/build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}.exe
         retention-days: 30
+        
+    - name: Set workflow output and save SHA
+      id: output
+      shell: msys2 {0}
+      run: |
+        echo "has_update=${{ steps.check_existing.outputs.should_build }}" >> $GITHUB_OUTPUT
+        echo "arch=${{ matrix.arch }}" >> $GITHUB_OUTPUT
+        echo "current_sha=${{ steps.check_existing.outputs.current_sha }}" >> $GITHUB_OUTPUT
+        
+        # x64の場合のみSHA情報をファイルに保存
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          echo "${{ steps.check_existing.outputs.current_sha }}" > x265_sha.txt
+        fi
+        
+    - name: Upload SHA info
+      if: matrix.arch == 'x64'
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265_sha
+        path: x265/x265_sha.txt
+        retention-days: 1
 
 

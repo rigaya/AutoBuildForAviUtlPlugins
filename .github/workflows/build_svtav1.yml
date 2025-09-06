@@ -38,8 +38,72 @@ jobs:
           make:p
           pkgconf:p
           cmake:p
+          jq:p
           
+    - name: Check for existing release
+      id: check_existing
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        # SVT-AV1の現在のSHAを取得
+        git clone --depth 1 https://gitlab.com/AOMediaCodec/SVT-AV1.git temp_svtav1
+        cd temp_svtav1
+        CURRENT_SHA=$(git rev-parse HEAD)
+        cd ..
+        rm -rf temp_svtav1
+        
+        echo "current_sha=${CURRENT_SHA}" >> $GITHUB_OUTPUT
+        echo "Current SVT-AV1 SHA: ${CURRENT_SHA}"
+        
+        # 最新リリースからbuild_rev.txtをダウンロード
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest" 2>/dev/null || echo "{}")
+        BUILD_REV_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"build_rev.txt\") | .browser_download_url" 2>/dev/null || echo "")
+        
+        if [ "$BUILD_REV_URL" != "null" ] && [ "$BUILD_REV_URL" != "" ]; then
+          echo "Downloading build_rev.txt from latest release..."
+          curl -L -o build_rev.txt "${BUILD_REV_URL}"
+          
+          # SVT-AV1のSHAを比較
+          EXISTING_SVTAV1_SHA=$(grep "^svtav1:" build_rev.txt | cut -d' ' -f2 || echo "")
+          
+          if [ "$EXISTING_SVTAV1_SHA" = "$CURRENT_SHA" ]; then
+            echo "SVT-AV1 SHA matches existing release: $CURRENT_SHA"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            
+            # 既存のファイルを探してダウンロード（x64のファイル名から推測）
+            X64_FILE=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name | test(\"^SvtAv1EncApp_.*_x64\\.zip$\")) | .name" 2>/dev/null || echo "")
+            if [ "$X64_FILE" != "null" ] && [ "$X64_FILE" != "" ]; then
+              # ファイル名からバージョンを抽出
+              SVTAV1_REV=$(echo "$X64_FILE" | sed 's/SvtAv1EncApp_\(.*\)_x64\.zip/\1/')
+              echo "svtav1_rev=${SVTAV1_REV}" >> $GITHUB_OUTPUT
+              
+              EXPECTED_NAME="SvtAv1EncApp_${SVTAV1_REV}_${{ matrix.arch }}.zip"
+              ASSET_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"$EXPECTED_NAME\") | .browser_download_url" 2>/dev/null || echo "")
+              
+              if [ "$ASSET_URL" != "null" ] && [ "$ASSET_URL" != "" ]; then
+                mkdir -p build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/
+                curl -L -o "${EXPECTED_NAME}" "${ASSET_URL}"
+                unzip "${EXPECTED_NAME}" -d build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/
+                echo "Downloaded and extracted existing build: ${EXPECTED_NAME}"
+              else
+                echo "Warning: build_rev.txt indicates same SHA but file not found, will build"
+                echo "should_build=true" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "Warning: Could not find x64 file to determine version, will build"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "SVT-AV1 SHA differs: existing=$EXISTING_SVTAV1_SHA, current=$CURRENT_SHA"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "No build_rev.txt found in latest release, will build"
+          echo "should_build=true" >> $GITHUB_OUTPUT
+        fi
+        
     - name: Extract test data
+      if: steps.check_existing.outputs.should_build == 'true'
       shell: msys2 {0}
       working-directory: svtav1
       run: |
@@ -49,6 +113,7 @@ jobs:
         7z x test_10.7z
         
     - name: Build svtav1
+      if: steps.check_existing.outputs.should_build == 'true'
       shell: msys2 {0}
       working-directory: svtav1
       run: |
@@ -62,26 +127,54 @@ jobs:
       shell: msys2 {0}
       working-directory: svtav1
       run: |
-        EXE_PATH_ORG="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp.exe"
-        if [ -f "$EXE_PATH_ORG" ]; then
-          SVTAV1_REV=$($EXE_PATH_ORG --version | cut -d ' ' -f 2)
-          SVTAV1_REV=${SVTAV1_REV:1:-10}
-          echo "svtav1_rev=${SVTAV1_REV}" >> $GITHUB_OUTPUT
-          echo "SVT-AV1 version: ${SVTAV1_REV}"
-          
-          # リネーム
-          NEW_NAME="SvtAv1EncApp_${SVTAV1_REV}.exe"
-          cp "$EXE_PATH_ORG" "build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/${NEW_NAME}"
-          echo "Renamed to: ${NEW_NAME}"
+        if [ "${{ steps.check_existing.outputs.should_build }}" = "true" ]; then
+          # 新しくビルドした場合
+          EXE_PATH_ORG="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp.exe"
+          if [ -f "$EXE_PATH_ORG" ]; then
+            SVTAV1_REV=$($EXE_PATH_ORG --version | cut -d ' ' -f 2)
+            SVTAV1_REV=${SVTAV1_REV:1:-10}
+            echo "svtav1_rev=${SVTAV1_REV}" >> $GITHUB_OUTPUT
+            echo "SVT-AV1 version: ${SVTAV1_REV}"
+            
+            # リネーム
+            NEW_NAME="SvtAv1EncApp_${SVTAV1_REV}_${{ matrix.arch }}.exe"
+            cp "$EXE_PATH_ORG" "build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/${NEW_NAME}"
+            echo "Renamed to: ${NEW_NAME}"
+          else
+            echo "Error: SvtAv1EncApp.exe not found at $EXE_PATH_ORG"
+            exit 1
+          fi
         else
-          echo "Error: SvtAv1EncApp.exe not found at $EXE_PATH_ORG"
-          exit 1
+          # 既存ファイルを使用する場合
+          echo "svtav1_rev=${{ steps.check_existing.outputs.svtav1_rev }}" >> $GITHUB_OUTPUT
+          echo "Using existing SVT-AV1 version: ${{ steps.check_existing.outputs.svtav1_rev }}"
         fi
         
     - name: Upload SVT-AV1 artifact
       uses: actions/upload-artifact@v4
       with:
         name: SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}
-        path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}.exe
+        path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}.exe
         retention-days: 30
+        
+    - name: Set workflow output and save SHA
+      id: output
+      shell: msys2 {0}
+      run: |
+        echo "has_update=${{ steps.check_existing.outputs.should_build }}" >> $GITHUB_OUTPUT
+        echo "arch=${{ matrix.arch }}" >> $GITHUB_OUTPUT
+        echo "current_sha=${{ steps.check_existing.outputs.current_sha }}" >> $GITHUB_OUTPUT
+        
+        # x64の場合のみSHA情報をファイルに保存
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          echo "${{ steps.check_existing.outputs.current_sha }}" > svtav1_sha.txt
+        fi
+        
+    - name: Upload SHA info
+      if: matrix.arch == 'x64'
+      uses: actions/upload-artifact@v4
+      with:
+        name: svtav1_sha
+        path: svtav1/svtav1_sha.txt
+        retention-days: 1
 

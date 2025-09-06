@@ -24,7 +24,105 @@ jobs:
         echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
         echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
         
+    - name: Download SHA artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: "*_sha"
+        path: sha_artifacts/
+        merge-multiple: false
+      continue-on-error: true
+        
+    - name: Get SHA from artifacts and create build_rev.txt
+      id: check_updates
+      run: |
+        # アーティファクトからSHAを取得
+        if [ -f "sha_artifacts/x264_sha/x264_sha.txt" ]; then
+          X264_SHA=$(cat sha_artifacts/x264_sha/x264_sha.txt)
+          echo "x264 SHA from artifact: $X264_SHA"
+        else
+          echo "x264 SHA artifact not found, getting from git..."
+          git clone --depth 1 https://code.videolan.org/videolan/x264.git temp_x264
+          cd temp_x264
+          X264_SHA=$(git rev-parse HEAD)
+          cd .. && rm -rf temp_x264
+        fi
+        
+        if [ -f "sha_artifacts/x265_sha/x265_sha.txt" ]; then
+          X265_SHA=$(cat sha_artifacts/x265_sha/x265_sha.txt)
+          echo "x265 SHA from artifact: $X265_SHA"
+        else
+          echo "x265 SHA artifact not found, getting from git..."
+          git clone --depth 1 https://bitbucket.org/multicoreware/x265_git.git temp_x265
+          cd temp_x265
+          X265_SHA=$(git rev-parse HEAD)
+          cd .. && rm -rf temp_x265
+        fi
+        
+        if [ -f "sha_artifacts/svtav1_sha/svtav1_sha.txt" ]; then
+          SVTAV1_SHA=$(cat sha_artifacts/svtav1_sha/svtav1_sha.txt)
+          echo "SVT-AV1 SHA from artifact: $SVTAV1_SHA"
+        else
+          echo "SVT-AV1 SHA artifact not found, getting from git..."
+          git clone --depth 1 https://gitlab.com/AOMediaCodec/SVT-AV1.git temp_svtav1
+          cd temp_svtav1
+          SVTAV1_SHA=$(git rev-parse HEAD)
+          cd .. && rm -rf temp_svtav1
+        fi
+        
+        echo "Current SHAs:"
+        echo "x264: $X264_SHA"
+        echo "x265: $X265_SHA"
+        echo "svtav1: $SVTAV1_SHA"
+        
+        # 最新リリースからbuild_rev.txtをダウンロード
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest" 2>/dev/null || echo "{}")
+        BUILD_REV_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"build_rev.txt\") | .browser_download_url" 2>/dev/null || echo "")
+        
+        HAS_UPDATES=false
+        
+        if [ "$BUILD_REV_URL" != "null" ] && [ "$BUILD_REV_URL" != "" ]; then
+          echo "Downloading existing build_rev.txt..."
+          curl -L -o existing_build_rev.txt "${BUILD_REV_URL}"
+          
+          # 各SHAを比較
+          EXISTING_X264_SHA=$(grep "^x264:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
+          EXISTING_X265_SHA=$(grep "^x265:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
+          EXISTING_SVTAV1_SHA=$(grep "^svtav1:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
+          
+          if [ "$EXISTING_X264_SHA" != "$X264_SHA" ]; then
+            echo "x264 SHA differs: existing=$EXISTING_X264_SHA, current=$X264_SHA"
+            HAS_UPDATES=true
+          fi
+          
+          if [ "$EXISTING_X265_SHA" != "$X265_SHA" ]; then
+            echo "x265 SHA differs: existing=$EXISTING_X265_SHA, current=$X265_SHA"
+            HAS_UPDATES=true
+          fi
+          
+          if [ "$EXISTING_SVTAV1_SHA" != "$SVTAV1_SHA" ]; then
+            echo "SVT-AV1 SHA differs: existing=$EXISTING_SVTAV1_SHA, current=$SVTAV1_SHA"
+            HAS_UPDATES=true
+          fi
+        else
+          echo "No existing build_rev.txt found, will create release"
+          HAS_UPDATES=true
+        fi
+        
+        # 新しいbuild_rev.txtを作成
+        echo "x264: $X264_SHA" > build_rev.txt
+        echo "x265: $X265_SHA" >> build_rev.txt
+        echo "svtav1: $SVTAV1_SHA" >> build_rev.txt
+        
+        echo "has_updates=${HAS_UPDATES}" >> $GITHUB_OUTPUT
+        
+        if [ "$HAS_UPDATES" = "false" ]; then
+          echo "No updates found. Skipping release creation."
+        else
+          echo "Updates found. Will create release."
+        fi
+        
     - name: Download x264 artifacts
+      if: steps.check_updates.outputs.has_updates == 'true'
       uses: actions/download-artifact@v4
       with:
         pattern: x264_*
@@ -33,6 +131,7 @@ jobs:
       continue-on-error: true
         
     - name: Download x265 artifacts
+      if: steps.check_updates.outputs.has_updates == 'true'
       uses: actions/download-artifact@v4
       with:
         pattern: x265_*
@@ -41,6 +140,7 @@ jobs:
       continue-on-error: true
         
     - name: Download SVT-AV1 artifacts
+      if: steps.check_updates.outputs.has_updates == 'true'
       uses: actions/download-artifact@v4
       with:
         pattern: SvtAv1EncApp_*
@@ -49,11 +149,13 @@ jobs:
       continue-on-error: true
         
     - name: List downloaded artifacts
+      if: steps.check_updates.outputs.has_updates == 'true'
       run: |
         echo "Downloaded artifacts:"
         find artifacts/ -type f -name "*.exe" | sort
         
     - name: Create zip files from executables
+      if: steps.check_updates.outputs.has_updates == 'true'
       run: |
         mkdir -p zipped_artifacts/
         find artifacts/ -type f -name "*.exe" | while read file; do
@@ -64,10 +166,15 @@ jobs:
           zip "../../../zipped_artifacts/${name_without_ext}.zip" "$filename"
           cd - > /dev/null
         done
-        echo "Created zip files:"
+        
+        # build_rev.txtもzipped_artifactsディレクトリにコピー
+        cp build_rev.txt zipped_artifacts/
+        
+        echo "Created zip files and build_rev.txt:"
         ls -la zipped_artifacts/
         
     - name: Create release
+      if: steps.check_updates.outputs.has_updates == 'true'
       id: create_release
       uses: actions/create-release@v1
       env:
@@ -103,8 +210,10 @@ jobs:
         draft: false
         prerelease: false
         
-    - name: Upload zip files to release
+    - name: Upload files to release
+      if: steps.check_updates.outputs.has_updates == 'true'
       run: |
+        # zipファイルをアップロード
         find zipped_artifacts/ -type f -name "*.zip" | while read file; do
           filename=$(basename "$file")
           echo "Uploading $filename..."
@@ -113,9 +222,17 @@ jobs:
                --data-binary @"$file" \
                "${{ steps.create_release.outputs.upload_url }}?name=$filename"
         done
+        
+        # build_rev.txtをアップロード
+        echo "Uploading build_rev.txt..."
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+             -H "Content-Type: text/plain" \
+             --data-binary @"zipped_artifacts/build_rev.txt" \
+             "${{ steps.create_release.outputs.upload_url }}?name=build_rev.txt"
       continue-on-error: true
         
     - name: Summary
+      if: steps.check_updates.outputs.has_updates == 'true'
       run: |
         echo "## リリース作成完了 🎉" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -127,3 +244,16 @@ jobs:
         find zipped_artifacts/ -type f -name "*.zip" | while read file; do
           echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
         done
+        echo "- build_rev.txt" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ビルドリビジョン情報:" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat build_rev.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        
+    - name: No updates summary
+      if: steps.check_updates.outputs.has_updates == 'false'
+      run: |
+        echo "## 更新なし" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "すべてのエンコーダが最新の状態です。新しいリリースは作成されませんでした。" >> $GITHUB_STEP_SUMMARY
