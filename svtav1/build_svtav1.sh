@@ -41,7 +41,9 @@ if [ -d "SVT-AV1" ]; then
     git reset --hard HEAD
     git pull
     cd ..
-find
+else
+    git clone https://gitlab.com/AOMediaCodec/SVT-AV1.git
+fi
 
 mkdir -p $BUILD_DIR/$TARGET_ARCH
 cd $BUILD_DIR/$TARGET_ARCH
