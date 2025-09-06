@@ -1,0 +1,86 @@
+name: Build x265
+
+on:
+  push:
+    branches: [ master, actions ]
+
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            msystem: MINGW32
+            mingwenv: i686
+          - arch: x64
+            msystem: CLANG64
+            mingwenv: clang-x86_64
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.msystem }}
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-${{ matrix.mingwenv }}-toolchain
+          git
+          p7zip
+          nasm
+        pacboy: >-
+          clang:p
+          lld:p
+          llvm:p
+          make:p
+          pkgconf:p
+          cmake:p
+          
+    - name: Extract test data
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        7z x test_8.7z
+        
+    - name: Build x265
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        chmod +x build_x265.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        ./build_x265.sh
+        
+    - name: Get x265 version and rename executable
+      id: get_version
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        EXE_PATH="build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265.exe"
+        if [ -f "$EXE_PATH" ]; then
+          X265_VER=$($EXE_PATH --version 2>&1 | head -n 1 | sed 's/-/ /g' | awk '{print $6}')
+          echo "x265_ver=${X265_VER}" >> $GITHUB_OUTPUT
+          echo "x265 version: ${X265_VER}"
+          
+          # リネーム
+          NEW_NAME="x265_${X265_VER}_${{ matrix.arch }}.exe"
+          cp "$EXE_PATH" "build_x265/${{ matrix.arch }}/x265/build/msys/8bit/${NEW_NAME}"
+          echo "Renamed to: ${NEW_NAME}"
+        else
+          echo "Error: x265.exe not found at $EXE_PATH"
+          exit 1
+        fi
+        
+    - name: Upload x265 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}
+        path: x265/build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}.exe
+        retention-days: 30
+
+
