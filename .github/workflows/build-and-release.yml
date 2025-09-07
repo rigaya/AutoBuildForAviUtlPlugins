@@ -1,0 +1,580 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ master, actions ]
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      x264_sha: ${{ steps.get_sha.outputs.x264_sha }}
+      x265_sha: ${{ steps.get_sha.outputs.x265_sha }}
+      svtav1_sha: ${{ steps.get_sha.outputs.svtav1_sha }}
+      x264_needs_build: ${{ steps.check_updates.outputs.x264_needs_build }}
+      x265_needs_build: ${{ steps.check_updates.outputs.x265_needs_build }}
+      svtav1_needs_build: ${{ steps.check_updates.outputs.svtav1_needs_build }}
+      has_updates: ${{ steps.check_updates.outputs.has_updates }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Get current SHA for all encoders
+      id: get_sha
+      run: |
+        # 各エンコーダの現在のSHAを取得
+        echo "Getting current SHA for x264..."
+        git clone --depth 1 https://code.videolan.org/videolan/x264.git temp_x264
+        cd temp_x264
+        X264_SHA=$(git rev-parse HEAD)
+        cd .. && rm -rf temp_x264
+        
+        echo "Getting current SHA for x265..."
+        git clone --depth 1 https://bitbucket.org/multicoreware/x265_git.git temp_x265
+        cd temp_x265
+        X265_SHA=$(git rev-parse HEAD)
+        cd .. && rm -rf temp_x265
+        
+        echo "Getting current SHA for SVT-AV1..."
+        git clone --depth 1 https://gitlab.com/AOMediaCodec/SVT-AV1.git temp_svtav1
+        cd temp_svtav1
+        SVTAV1_SHA=$(git rev-parse HEAD)
+        cd .. && rm -rf temp_svtav1
+        
+        echo "x264_sha=${X264_SHA}" >> $GITHUB_OUTPUT
+        echo "x265_sha=${X265_SHA}" >> $GITHUB_OUTPUT
+        echo "svtav1_sha=${SVTAV1_SHA}" >> $GITHUB_OUTPUT
+        
+        echo "Current SHAs:"
+        echo "x264: $X264_SHA"
+        echo "x265: $X265_SHA"
+        echo "svtav1: $SVTAV1_SHA"
+        
+    - name: Check for updates
+      id: check_updates
+      run: |
+        # 最新リリースからbuild_rev.txtをダウンロード
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest" 2>/dev/null || echo "{}")
+        BUILD_REV_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"build_rev.txt\") | .browser_download_url" 2>/dev/null || echo "")
+        
+        X264_NEEDS_BUILD=true
+        X265_NEEDS_BUILD=true
+        SVTAV1_NEEDS_BUILD=true
+        HAS_UPDATES=false
+        
+        if [ "$BUILD_REV_URL" != "null" ] && [ "$BUILD_REV_URL" != "" ]; then
+          echo "Downloading existing build_rev.txt..."
+          curl -L -o existing_build_rev.txt "${BUILD_REV_URL}"
+          
+          # 各SHAを比較
+          EXISTING_X264_SHA=$(grep "^x264:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
+          EXISTING_X265_SHA=$(grep "^x265:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
+          EXISTING_SVTAV1_SHA=$(grep "^svtav1:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
+          
+          if [ "$EXISTING_X264_SHA" = "${{ steps.get_sha.outputs.x264_sha }}" ]; then
+            echo "x264 SHA matches existing release: ${{ steps.get_sha.outputs.x264_sha }}"
+            X264_NEEDS_BUILD=false
+          else
+            echo "x264 SHA differs: existing=$EXISTING_X264_SHA, current=${{ steps.get_sha.outputs.x264_sha }}"
+            HAS_UPDATES=true
+          fi
+          
+          if [ "$EXISTING_X265_SHA" = "${{ steps.get_sha.outputs.x265_sha }}" ]; then
+            echo "x265 SHA matches existing release: ${{ steps.get_sha.outputs.x265_sha }}"
+            X265_NEEDS_BUILD=false
+          else
+            echo "x265 SHA differs: existing=$EXISTING_X265_SHA, current=${{ steps.get_sha.outputs.x265_sha }}"
+            HAS_UPDATES=true
+          fi
+          
+          if [ "$EXISTING_SVTAV1_SHA" = "${{ steps.get_sha.outputs.svtav1_sha }}" ]; then
+            echo "SVT-AV1 SHA matches existing release: ${{ steps.get_sha.outputs.svtav1_sha }}"
+            SVTAV1_NEEDS_BUILD=false
+          else
+            echo "SVT-AV1 SHA differs: existing=$EXISTING_SVTAV1_SHA, current=${{ steps.get_sha.outputs.svtav1_sha }}"
+            HAS_UPDATES=true
+          fi
+        else
+          echo "No existing build_rev.txt found, will build all"
+          HAS_UPDATES=true
+        fi
+        
+        echo "x264_needs_build=${X264_NEEDS_BUILD}" >> $GITHUB_OUTPUT
+        echo "x265_needs_build=${X265_NEEDS_BUILD}" >> $GITHUB_OUTPUT
+        echo "svtav1_needs_build=${SVTAV1_NEEDS_BUILD}" >> $GITHUB_OUTPUT
+        echo "has_updates=${HAS_UPDATES}" >> $GITHUB_OUTPUT
+        
+        echo "Build requirements:"
+        echo "x264: $X264_NEEDS_BUILD"
+        echo "x265: $X265_NEEDS_BUILD"
+        echo "svtav1: $SVTAV1_NEEDS_BUILD"
+        echo "Has updates: $HAS_UPDATES"
+
+  build-x264:
+    needs: check-updates
+    if: needs.check-updates.outputs.x264_needs_build == 'true'
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            msystem: MINGW32
+            mingwenv: i686
+          - arch: x64
+            msystem: CLANG64
+            mingwenv: clang-x86_64
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.msystem }}
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-${{ matrix.mingwenv }}-toolchain
+          git
+          p7zip
+          nasm
+        pacboy: >-
+          clang:p
+          lld:p
+          llvm:p
+          make:p
+          pkgconf:p
+          
+    - name: Extract test data
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        7z x test_8.7z
+        
+    - name: Build x264
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        chmod +x build_x264.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        ./build_x264.sh
+        
+    - name: Get x264 revision number and rename executable
+      id: get_rev
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        cd build_x264/${{ matrix.arch }}/x264
+        REV=$(git rev-list HEAD | wc -l)
+        echo "x264_rev=${REV}" >> $GITHUB_OUTPUT
+        echo "X264 revision: ${REV}"
+        
+        if [ -f x264.exe ]; then
+          mv x264.exe x264_${REV}_${{ matrix.arch }}.exe
+          echo "Renamed to: x264_${REV}_${{ matrix.arch }}.exe"
+        else
+          echo "Error: x264.exe not found"
+          exit 1
+        fi
+        
+    - name: Upload x264 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}
+        path: x264/build_x264/${{ matrix.arch }}/x264/x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
+        retention-days: 30
+
+  build-x265:
+    needs: check-updates
+    if: needs.check-updates.outputs.x265_needs_build == 'true'
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            msystem: MINGW32
+            mingwenv: i686
+          - arch: x64
+            msystem: CLANG64
+            mingwenv: clang-x86_64
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.msystem }}
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-${{ matrix.mingwenv }}-toolchain
+          git
+          p7zip
+          nasm
+        pacboy: >-
+          clang:p
+          lld:p
+          llvm:p
+          make:p
+          pkgconf:p
+          cmake:p
+          
+    - name: Extract test data
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        7z x test_8.7z
+        
+    - name: Build x265
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        chmod +x build_x265.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        ./build_x265.sh
+        
+    - name: Get x265 version and rename executable
+      id: get_version
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        EXE_PATH="build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265.exe"
+        if [ -f "$EXE_PATH" ]; then
+          X265_VER=$($EXE_PATH --version 2>&1 | head -n 1 | sed 's/-/ /g' | awk '{print $6}')
+          echo "x265_ver=${X265_VER}" >> $GITHUB_OUTPUT
+          echo "x265 version: ${X265_VER}"
+          
+          # リネーム
+          NEW_NAME="x265_${X265_VER}_${{ matrix.arch }}.exe"
+          cp "$EXE_PATH" "build_x265/${{ matrix.arch }}/x265/build/msys/8bit/${NEW_NAME}"
+          echo "Renamed to: ${NEW_NAME}"
+        else
+          echo "Error: x265.exe not found at $EXE_PATH"
+          exit 1
+        fi
+        
+    - name: Upload x265 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}
+        path: x265/build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}.exe
+        retention-days: 30
+
+  build-svtav1:
+    needs: check-updates
+    if: needs.check-updates.outputs.svtav1_needs_build == 'true'
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            msystem: CLANG64
+            mingwenv: clang-x86_64
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.msystem }}
+        update: true
+        install: >-
+          base-devel
+          mingw-w64-${{ matrix.mingwenv }}-toolchain
+          git
+          p7zip
+          nasm
+        pacboy: >-
+          clang:p
+          lld:p
+          llvm:p
+          make:p
+          pkgconf:p
+          cmake:p
+          
+    - name: Extract test data
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
+        7z x test_8.7z
+        7z x test_10.7z
+        
+    - name: Build svtav1
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        chmod +x build_svtav1.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        export YUV_PATH_10="$(pwd)/test_10.yuv"
+        ./build_svtav1.sh
+        
+    - name: Get SVT-AV1 version and rename executable
+      id: get_version
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        EXE_PATH_ORG="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp.exe"
+        if [ -f "$EXE_PATH_ORG" ]; then
+          SVTAV1_REV=$($EXE_PATH_ORG --version | cut -d ' ' -f 2)
+          SVTAV1_REV=${SVTAV1_REV:1:-10}
+          echo "svtav1_rev=${SVTAV1_REV}" >> $GITHUB_OUTPUT
+          echo "SVT-AV1 version: ${SVTAV1_REV}"
+          
+          # リネーム
+          NEW_NAME="SvtAv1EncApp_${SVTAV1_REV}_${{ matrix.arch }}.exe"
+          cp "$EXE_PATH_ORG" "build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/${NEW_NAME}"
+          echo "Renamed to: ${NEW_NAME}"
+        else
+          echo "Error: SvtAv1EncApp.exe not found at $EXE_PATH_ORG"
+          exit 1
+        fi
+        
+    - name: Upload SVT-AV1 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}
+        path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}.exe
+        retention-days: 30
+
+  download-existing-x264:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x264_needs_build == 'false'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download existing x264 files from latest release
+      run: |
+        # 最新リリースを取得
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
+        
+        echo "Downloading existing x264 files..."
+        mkdir -p x264_artifacts
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x264_.*\\.zip$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+          echo "Downloading $name"
+          curl -L -o "$name" "$url"
+          # zipを展開してexeを取り出し
+          unzip -q "$name"
+          exe_name=$(echo "$name" | sed 's/\.zip$/\.exe/')
+          if [ -f "$exe_name" ]; then
+            echo "Found $exe_name"
+            mv "$exe_name" "x264_artifacts/"
+          fi
+          rm "$name"
+        done
+        
+        echo "Downloaded x264 files:"
+        ls -la x264_artifacts/
+        
+    - name: Upload x264 reused artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: reused-x264-executables
+        path: x264_artifacts/
+        retention-days: 30
+
+  download-existing-x265:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x265_needs_build == 'false'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download existing x265 files from latest release
+      run: |
+        # 最新リリースを取得
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
+        
+        echo "Downloading existing x265 files..."
+        mkdir -p x265_artifacts
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x265_.*\\.zip$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+          echo "Downloading $name"
+          curl -L -o "$name" "$url"
+          # zipを展開してexeを取り出し
+          unzip -q "$name"
+          exe_name=$(echo "$name" | sed 's/\.zip$/\.exe/')
+          if [ -f "$exe_name" ]; then
+            echo "Found $exe_name"
+            mv "$exe_name" "x265_artifacts/"
+          fi
+          rm "$name"
+        done
+        
+        echo "Downloaded x265 files:"
+        ls -la x265_artifacts/
+        
+    - name: Upload x265 reused artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: reused-x265-executables
+        path: x265_artifacts/
+        retention-days: 30
+
+  download-existing-svtav1:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.svtav1_needs_build == 'false'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download existing SVT-AV1 files from latest release
+      run: |
+        # 最新リリースを取得
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
+        
+        echo "Downloading existing SVT-AV1 files..."
+        mkdir -p svtav1_artifacts
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^SvtAv1EncApp_.*\\.zip$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+          echo "Downloading $name"
+          curl -L -o "$name" "$url"
+          # zipを展開してexeを取り出し
+          unzip -q "$name"
+          exe_name=$(echo "$name" | sed 's/\.zip$/\.exe/')
+          if [ -f "$exe_name" ]; then
+            echo "Found $exe_name"
+            mv "$exe_name" "svtav1_artifacts/"
+          fi
+          rm "$name"
+        done
+        
+        echo "Downloaded SVT-AV1 files:"
+        ls -la svtav1_artifacts/
+        
+    - name: Upload SVT-AV1 reused artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: reused-svtav1-executables
+        path: svtav1_artifacts/
+        retention-days: 30
+
+  create-release:
+    needs: [check-updates, build-x264, build-x265, build-svtav1, download-existing-x264, download-existing-x265, download-existing-svtav1]
+    if: always() && needs.check-updates.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Get current date and time
+      id: datetime
+      run: |
+        echo "datetime=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
+        
+    - name: Create build_rev.txt
+      run: |
+        echo "x264: ${{ needs.check-updates.outputs.x264_sha }}" > build_rev.txt
+        echo "x265: ${{ needs.check-updates.outputs.x265_sha }}" >> build_rev.txt
+        echo "svtav1: ${{ needs.check-updates.outputs.svtav1_sha }}" >> build_rev.txt
+        
+        echo "Created build_rev.txt:"
+        cat build_rev.txt
+        
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+        merge-multiple: false
+        
+    - name: List downloaded artifacts
+      run: |
+        echo "Downloaded artifacts:"
+        find artifacts/ -type f -name "*.exe" | sort
+        
+    - name: Create zip files from executables
+      run: |
+        mkdir -p zipped_artifacts/
+        find artifacts/ -type f -name "*.exe" | while read file; do
+          filename=$(basename "$file")
+          name_without_ext="${filename%.exe}"
+          echo "Creating zip for $filename..."
+          cd "$(dirname "$file")"
+          zip "../../../zipped_artifacts/${name_without_ext}.zip" "$filename"
+          cd - > /dev/null
+        done
+        
+        # build_rev.txtもzipped_artifactsディレクトリにコピー
+        cp build_rev.txt zipped_artifacts/
+        
+        echo "Created zip files and build_rev.txt:"
+        ls -la zipped_artifacts/
+        
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: auto-build-${{ steps.datetime.outputs.datetime }}
+        release_name: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
+        body: |
+          ## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
+          
+          ### x264
+          - x86/x64用
+          
+          ### x265
+          - 8bit/10bit/12bitビット深度をサポート
+          - x86/x64用
+          
+          ### SVT-AV1
+          - x64版のみ
+        draft: false
+        prerelease: false
+        
+    - name: Upload files to release
+      run: |
+        # zipファイルをアップロード
+        find zipped_artifacts/ -type f -name "*.zip" | while read file; do
+          filename=$(basename "$file")
+          echo "Uploading $filename..."
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Content-Type: application/zip" \
+               --data-binary @"$file" \
+               "${{ steps.create_release.outputs.upload_url }}?name=$filename"
+        done
+        
+        # build_rev.txtをアップロード
+        echo "Uploading build_rev.txt..."
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+             -H "Content-Type: text/plain" \
+             --data-binary @"zipped_artifacts/build_rev.txt" \
+             "${{ steps.create_release.outputs.upload_url }}?name=build_rev.txt"
+      continue-on-error: true
+        
+    - name: Summary
+      run: |
+        echo "## リリース作成完了 🎉" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**タグ名**: auto-build-${{ steps.datetime.outputs.datetime }}" >> $GITHUB_STEP_SUMMARY
+        echo "**リリース名**: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}" >> $GITHUB_STEP_SUMMARY
+        echo "**URL**: ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### アップロードされたファイル:" >> $GITHUB_STEP_SUMMARY
+        find zipped_artifacts/ -type f -name "*.zip" | while read file; do
+          echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
+        done
+        echo "- build_rev.txt" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ビルドリビジョン情報:" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat build_rev.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ビルド状況:" >> $GITHUB_STEP_SUMMARY
+        echo "- x264: ${{ needs.check-updates.outputs.x264_needs_build == 'true' && '新規ビルド' || '既存利用' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- x265: ${{ needs.check-updates.outputs.x265_needs_build == 'true' && '新規ビルド' || '既存利用' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- svtav1: ${{ needs.check-updates.outputs.svtav1_needs_build == 'true' && '新規ビルド' || '既存利用' }}" >> $GITHUB_STEP_SUMMARY
