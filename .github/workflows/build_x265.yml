@@ -160,6 +160,7 @@ jobs:
     - name: Set workflow output and save SHA
       id: output
       shell: msys2 {0}
+      working-directory: x265
       run: |
         echo "has_update=${{ steps.check_existing.outputs.should_build }}" >> $GITHUB_OUTPUT
         echo "arch=${{ matrix.arch }}" >> $GITHUB_OUTPUT
