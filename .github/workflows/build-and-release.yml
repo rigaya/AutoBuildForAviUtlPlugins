@@ -512,48 +512,37 @@ jobs:
         echo "Created zip files and build_rev.txt:"
         ls -la zipped_artifacts/
         
-    - name: Create release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create release body
+      run: |
+        # リリースメッセージを作成
+        cat > release_body.md << 'EOF'
+        ## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
+        
+        ### x264
+        - x86/x64用
+        
+        ### x265
+        - 8bit/10bit/12bitビット深度をサポート
+        - x86/x64用
+        
+        ### SVT-AV1
+        - x64版のみ
+        EOF
+        
+    - name: Create release and upload files
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: auto-build-${{ steps.datetime.outputs.datetime }}
-        release_name: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
-        body: |
-          ## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
-          
-          ### x264
-          - x86/x64用
-          
-          ### x265
-          - 8bit/10bit/12bitビット深度をサポート
-          - x86/x64用
-          
-          ### SVT-AV1
-          - x64版のみ
+        name: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
+        body_path: release_body.md
+        files: |
+          zipped_artifacts/*.zip
+          zipped_artifacts/build_rev.txt
         draft: false
         prerelease: false
-        
-    - name: Upload files to release
-      run: |
-        # zipファイルをアップロード
-        find zipped_artifacts/ -type f -name "*.zip" | while read file; do
-          filename=$(basename "$file")
-          echo "Uploading $filename..."
-          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-               -H "Content-Type: application/zip" \
-               --data-binary @"$file" \
-               "${{ steps.create_release.outputs.upload_url }}?name=$filename"
-        done
-        
-        # build_rev.txtをアップロード
-        echo "Uploading build_rev.txt..."
-        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-             -H "Content-Type: text/plain" \
-             --data-binary @"zipped_artifacts/build_rev.txt" \
-             "${{ steps.create_release.outputs.upload_url }}?name=build_rev.txt"
-      continue-on-error: true
+        make_latest: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
     - name: Summary
       run: |
@@ -561,7 +550,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**タグ名**: auto-build-${{ steps.datetime.outputs.datetime }}" >> $GITHUB_STEP_SUMMARY
         echo "**リリース名**: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}" >> $GITHUB_STEP_SUMMARY
-        echo "**URL**: ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "**URL**: https://github.com/rigaya/AutoBuildForAviUtlPlugins/releases/tag/auto-build-${{ steps.datetime.outputs.datetime }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### アップロードされたファイル:" >> $GITHUB_STEP_SUMMARY
         find zipped_artifacts/ -type f -name "*.zip" | while read file; do
