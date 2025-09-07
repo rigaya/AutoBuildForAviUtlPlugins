@@ -542,17 +542,19 @@ jobs:
           filename=$(basename "$file")
           echo "Uploading $filename..."
           curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-               -H "Content-Type: application/zip" \
-               --data-binary @"$file" \
-               "${{ steps.create_release.outputs.upload_url }}?name=$filename"
+               -F "name=$filename" \
+               -F "label=$filename" \
+               -F "file=@$file" \
+               "${{ steps.create_release.outputs.upload_url }}"
         done
         
         # build_rev.txtをアップロード
         echo "Uploading build_rev.txt..."
         curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-             -H "Content-Type: text/plain" \
-             --data-binary @"zipped_artifacts/build_rev.txt" \
-             "${{ steps.create_release.outputs.upload_url }}?name=build_rev.txt"
+             -F "name=build_rev.txt" \
+             -F "label=build_rev.txt" \
+             -F "file=@zipped_artifacts/build_rev.txt" \
+             "${{ steps.create_release.outputs.upload_url }}"
       continue-on-error: true
         
     - name: Summary
