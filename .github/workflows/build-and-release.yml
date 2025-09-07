@@ -501,9 +501,9 @@ jobs:
           filename=$(basename "$file")
           name_without_ext="${filename%.exe}"
           echo "Creating zip for $filename..."
-          cd "$(dirname "$file")"
-          zip "../../../zipped_artifacts/${name_without_ext}.zip" "$filename"
-          cd - > /dev/null
+          # 実行ファイルのみをzipに含める（ディレクトリ構造は除外）
+          # -jオプションでディレクトリ構造を除外してzipファイルを作成
+          zip -j "zipped_artifacts/${name_without_ext}.zip" "$file"
         done
         
         # build_rev.txtもzipped_artifactsディレクトリにコピー
