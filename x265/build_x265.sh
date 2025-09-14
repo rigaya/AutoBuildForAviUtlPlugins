@@ -212,38 +212,38 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
 
     INPUT_OPTION="--input ${YUV_PATH} --input-depth 8 --input-csp i420 --input-res 1280x720 --fps 30/1"
 
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --preset faster
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --preset fast
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --preset slow
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --preset slower
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset faster
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset fast
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset slow
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset slower
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset faster
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset fast
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset slow
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset slower
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --preset faster
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --preset fast
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --preset slow
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --preset slower
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset faster
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset fast
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset slow
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 10 --preset slower
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset faster
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset fast
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset slow
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset slower
 
     if [ ${ENABLE_AVX512} = "ON" ]; then
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --preset faster
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --preset fast
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --preset slow
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --preset slower
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset faster
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset fast
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset slow
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset slower
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset faster
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset fast
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset slow
-    run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset slower
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --preset faster
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --preset fast
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --preset slow
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --preset slower
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset faster
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset fast
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset slow
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 10 --preset slower
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset faster
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset fast
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset slow
+    run_prof -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset slower
     fi
 
     echo ${prof_files[@]}
