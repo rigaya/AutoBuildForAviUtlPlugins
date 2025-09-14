@@ -27,6 +27,7 @@ git config --global core.autocrlf false
 ENABLE_AVX512="ON"
 TARGET_ARCH="x64"
 FFMPEG_ARCH="x86_64"
+SVTAV1APPEXE="SvtAv1EncApp.exe"
 if [ -n "$MSYSTEM" ]; then
   if [ $MSYSTEM != "MINGW64" ] && [ $MSYSTEM != "CLANG64" ]; then
       echo "This script is for mingw64/clang64 only!"
@@ -44,9 +45,10 @@ else
     ENABLE_AVX512="OFF"
   fi
   CMAKE_TARGET="Unix Makefiles"
+  SVTAV1APPEXE="SvtAv1EncApp"
 fi
 
-if [ -n "$INSTALL_DIR" ]; then
+if [ ! -n "$INSTALL_DIR" ]; then
   INSTALL_DIR=$BUILD_DIR/$TARGET_ARCH/build
 fi
 
@@ -91,7 +93,7 @@ prof_files=()
 prof_idx=0
 
 function run_prof() {
-	../../Bin/Release/SvtAv1EncApp.exe $@
+	../../Bin/Release/${SVTAV1APPEXE} $@
 	prof_idx=$((prof_idx + 1))
 	for file in default_*_0.profraw; do
 	  new_file="${file%.profraw}_${prof_idx}.${file##*.}"
