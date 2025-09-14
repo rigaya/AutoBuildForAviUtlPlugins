@@ -17,6 +17,7 @@ PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
 PROFILE_USE_CC="-fprofile-use"
 PROFILE_USE_LD="-fprofile-use"
 ENABLE_AVX512="ON"
+X265APPEXE="x265.exe"
 
 if [ -n "$MSYSTEM" ]; then
     NJOBS=$(($NUMBER_OF_PROCESSORS>16?16:$NUMBER_OF_PROCESSORS))
@@ -45,6 +46,7 @@ else
         ENABLE_AVX512="OFF"
     fi
     CMAKE_TARGET="Unix Makefiles"
+    X265APPEXE="x265"
 fi
 
 echo "TARGET_ARCH=${TARGET_ARCH}"
@@ -336,6 +338,6 @@ cmake -G "${CMAKE_TARGET}" ../../../source \
 sed -i -e 's/Bdynamic/Bstatic/g' CMakeFiles/cli.dir/linklibs.rsp
 #echo ${SVT_HEVC_LINK_LIBS} >> CMakeFiles/cli.dir/linklibs.rsp
 make -j${NJOBS}
+strip -s ${BUILD_DIR}/${TARGET_ARCH}/x265/build/msys/8bit/${X265APPEXE}
 make install
 
-strip -s ${BUILD_DIR}/${TARGET_ARCH}/x265/build/msys/8bit/x265.exe
