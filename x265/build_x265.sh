@@ -1,12 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 #msys2用x265ビルドスクリプト
 #pacman -S base-devel mingw-w64-i686-toolchain mingw-w64-x86_64-toolchain p7zip git nasm p7zip
 #そのほかにcmakeのインストールが必要
-NJOBS=$(($NUMBER_OF_PROCESSORS>16?16:$NUMBER_OF_PROCESSORS))
-NJOBS_HIGHBITDEPTH=$(( $NJOBS/2 ))
 #NJOBS=8
 BUILD_DIR=`pwd`/build_x265
 PATCH_DIR=`pwd`/patch
+TARGET_ARCH="x64"
 
 X265_REV=
 X265_BRANCH="master"
@@ -17,23 +16,38 @@ PROFILE_GEN_CC="-fprofile-generate -gline-tables-only"
 PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
 PROFILE_USE_CC="-fprofile-use"
 PROFILE_USE_LD="-fprofile-use"
+ENABLE_AVX512="ON"
+
+if [ -n "$MSYSTEM" ]; then
+    NJOBS=$(($NUMBER_OF_PROCESSORS>16?16:$NUMBER_OF_PROCESSORS))
+else
+    NJOBS=$(nproc)
+fi
+NJOBS_HIGHBITDEPTH=$(( $NJOBS/2 ))
+
+CMAKE_TARGET="MSYS Makefiles"
 
 mkdir -p ${BUILD_DIR}
 mkdir -p ${BUILD_DIR}/src
 cd ${BUILD_DIR}/src
 
-# [ "x86", "x64" ]
-if [ $MSYSTEM = "MINGW32" ]; then
-    TARGET_ARCH="x86"
+if [ -n "$MSYSTEM" ]; then
+    if [ $MSYSTEM = "MINGW32" ]; then
+        TARGET_ARCH="x86"
+    fi
+    if [ $MSYSTEM == "CLANG64" ]; then
+        export CC=clang
+        export CXX=clang++
+    fi
 else
-    TARGET_ARCH="x64"
+    AVX512_COUNT=$(cat /proc/cpuinfo | grep flags | grep avx512 | wc -l)
+    if [ $AVX512_COUNT -eq 0 ]; then
+        ENABLE_AVX512="OFF"
+    fi
+    CMAKE_TARGET="Unix Makefiles"
 fi
-echo "TARGET_ARCH=${TARGET_ARCH}"
 
-if [ $MSYSTEM == "CLANG64" ]; then
-    export CC=clang
-    export CXX=clang++
-fi
+echo "TARGET_ARCH=${TARGET_ARCH}"
 
 if [ ${TARGET_ARCH} = "x64" ]; then
     BUILD_CCFLAGS="-O3 -msse2 -fpermissive -flto -I${INSTALL_DIR}/include"
@@ -81,7 +95,7 @@ fi
 
 # --- 出力先を準備 --------------------------------------
 if [ ! -d ${BUILD_DIR}/${TARGET_ARCH} ]; then
-    mkdir ${BUILD_DIR}/${TARGET_ARCH}
+    mkdir -p ${BUILD_DIR}/${TARGET_ARCH}
 fi
 cd ${BUILD_DIR}/${TARGET_ARCH}
 if [ -d x265 ]; then
@@ -111,7 +125,7 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
         cd 12bit
         #fprofile-generateするためには、-fprofile-generateを
         #CMAKE_C_FLAGS/CMAKE_CXX_FLAGSだけでなく、CMAKE_EXE_LINKER_FLAGSに渡す必要がある
-        cmake -G "MSYS Makefiles" ../../../source \
+        cmake -G "${CMAKE_TARGET}" ../../../source \
             -DHIGH_BIT_DEPTH=ON \
             -DEXPORT_C_API=OFF \
             -DENABLE_SHARED=OFF \
@@ -135,7 +149,7 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
         cd 10bit
         #fprofile-generateするためには、-fprofile-generateを
         #CMAKE_C_FLAGS/CMAKE_CXX_FLAGSだけでなく、CMAKE_EXE_LINKER_FLAGSに渡す必要がある
-        cmake -G "MSYS Makefiles" ../../../source \
+        cmake -G "${CMAKE_TARGET}" ../../../source \
             -DHIGH_BIT_DEPTH=ON \
             -DEXPORT_C_API=OFF \
             -DENABLE_SHARED=OFF \
@@ -162,7 +176,7 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
             cp ../12bit/libx265.a libx265_main12.a
         fi
     fi
-    cmake -G "MSYS Makefiles" ../../../source \
+    cmake -G "${CMAKE_TARGET}" ../../../source \
         -DEXTRA_LIB="${X265_EXTRA_LIB}" \
         -DEXTRA_LINK_FLAGS=-L. \
         -DLINKED_10BIT=${BUILD_10BIT} \
@@ -214,6 +228,7 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset slow
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx2 --output-depth 12 --preset slower
 
+    if [ ${ENABLE_AVX512} = "ON" ]; then
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --preset faster
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --preset fast
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512
@@ -229,7 +244,8 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset slow
     run_prof --y4m -o /dev/null ${INPUT_OPTION} --asm avx512 --output-depth 12 --preset slower
-    
+    fi
+
     echo ${prof_files[@]}
     llvm-profdata merge -output=default.profdata "${prof_files[@]}"
     
@@ -250,7 +266,7 @@ cd ${BUILD_DIR}/${TARGET_ARCH}/x265/build/msys
 if [ $BUILD_12BIT = "ON" ]; then
     mkdir -p 12bit
     cd 12bit
-    cmake -G "MSYS Makefiles" ../../../source \
+    cmake -G "${CMAKE_TARGET}" ../../../source \
         -DHIGH_BIT_DEPTH=ON \
         -DEXPORT_C_API=OFF \
         -DENABLE_SHARED=OFF \
@@ -273,7 +289,7 @@ cd ${BUILD_DIR}/${TARGET_ARCH}/x265/build/msys
 if [ $BUILD_10BIT = "ON" ]; then
     mkdir -p 10bit
     cd 10bit
-    cmake -G "MSYS Makefiles" ../../../source \
+    cmake -G "${CMAKE_TARGET}" ../../../source \
         -DHIGH_BIT_DEPTH=ON \
         -DEXPORT_C_API=OFF \
         -DENABLE_SHARED=OFF \
@@ -301,7 +317,7 @@ if [ $BUILD_10BIT = "ON" ] || [ $BUILD_12BIT = "ON" ]; then
 		cp ../12bit/libx265.a libx265_main12.a
 	fi
 fi
-cmake -G "MSYS Makefiles" ../../../source \
+cmake -G "${CMAKE_TARGET}" ../../../source \
     -DEXTRA_LIB="${X265_EXTRA_LIB}" \
     -DEXTRA_LINK_FLAGS=-L. \
     -DLINKED_10BIT=${BUILD_10BIT} \
@@ -320,5 +336,6 @@ cmake -G "MSYS Makefiles" ../../../source \
 sed -i -e 's/Bdynamic/Bstatic/g' CMakeFiles/cli.dir/linklibs.rsp
 #echo ${SVT_HEVC_LINK_LIBS} >> CMakeFiles/cli.dir/linklibs.rsp
 make -j${NJOBS}
+make install
 
 strip -s ${BUILD_DIR}/${TARGET_ARCH}/x265/build/msys/8bit/x265.exe
