@@ -57,12 +57,14 @@ else
     git clone https://code.videolan.org/videolan/x264.git
 fi
 
+cd x264
 if [ "${X264_REV}" != "" ]; then
     git checkout --force ${X264_REV}
 else
     git checkout --force ${X264_BRANCH}
     git reset --hard origin/${X264_BRANCH}
 fi
+cd ..
 
 if [ -d "l-smash" ]; then
     cd l-smash

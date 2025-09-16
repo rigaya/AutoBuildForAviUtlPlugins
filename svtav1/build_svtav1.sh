@@ -64,12 +64,14 @@ else
     git clone https://gitlab.com/AOMediaCodec/SVT-AV1.git
 fi
 
+cd SVT-AV1
 if [ "${SVTAV1_REV}" != "" ]; then
     git checkout --force ${SVTAV1_REV}
 else
     git checkout --force ${SVTAV1_BRANCH}
     git reset --hard origin/${SVTAV1_BRANCH}
 fi
+cd ..
 
 mkdir -p $BUILD_DIR/$TARGET_ARCH
 cd $BUILD_DIR/$TARGET_ARCH
