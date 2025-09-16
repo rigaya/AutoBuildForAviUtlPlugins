@@ -47,7 +47,9 @@ else
     PROFILE_USE_LD=
 fi
 
-INSTALL_DIR=$BUILD_DIR/$TARGET_ARCH/build
+if [ ! -n "$INSTALL_DIR" ]; then
+  INSTALL_DIR=$BUILD_DIR/$TARGET_ARCH/build
+fi
 
 if [ -d "x264" ]; then
     cd x264
@@ -191,3 +193,4 @@ if [ $CC == "clang" ]; then
 else
     make fprofiled VIDS="${YUV_PATH}" -j$MAKE_PROCESS
 fi
+make install
