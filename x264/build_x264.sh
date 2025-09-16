@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # msys2用x264ビルドスクリプト
 #pacman -S base-devel mingw-w64-i686-toolchain mingw-w64-x86_64-toolchain
 #pacman -S p7zip git nasm
@@ -29,13 +29,13 @@ if [ -n "$MSYSTEM" ]; then
     else
         TARGET_ARCH="x64"
     fi
-    if [ $MSYSTEM == "CLANG64" ]; then
+    if [ $MSYSTEM = "CLANG64" ]; then
         export CC=clang
         export CXX=clang++
     fi
 fi
 
-if [ $CC == "clang" ]; then
+if [ $CC = "clang" ]; then
     PROFILE_GEN_CC="-fprofile-generate -gline-tables-only"
     PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
     PROFILE_USE_CC="-fprofile-use"
@@ -117,7 +117,7 @@ PKG_CONFIG_PATH=${INSTALL_DIR}/lib/pkgconfig \
  --extra-ldflags="${BUILD_LDFLAGS} ${PROFILE_GEN_LD}"
 
 
-if [ $CC == "clang" ]; then
+if [ $CC = "clang" ]; then
 
     make -j$MAKE_PROCESS
 
