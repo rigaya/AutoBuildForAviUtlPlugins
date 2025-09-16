@@ -10,6 +10,9 @@ PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
 PROFILE_USE_CC="-fprofile-use"
 PROFILE_USE_LD="-fprofile-use"
 
+SVTAV1_REV=${SVTAV1_REV:-}
+SVTAV1_BRANCH=${SVTAV1_BRANCH:-"master"}
+
 PKGCONFIG=pkg-config
 CMAKE_TARGET="MSYS Makefiles"
 
@@ -59,6 +62,13 @@ if [ -d "SVT-AV1" ]; then
     cd ..
 else
     git clone https://gitlab.com/AOMediaCodec/SVT-AV1.git
+fi
+
+if [ "${SVTAV1_REV}" != "" ]; then
+    git checkout --force ${SVTAV1_REV}
+else
+    git checkout --force ${SVTAV1_BRANCH}
+    git reset --hard origin/${SVTAV1_BRANCH}
 fi
 
 mkdir -p $BUILD_DIR/$TARGET_ARCH
