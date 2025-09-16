@@ -5,28 +5,46 @@
 BUILD_DIR=`pwd`/build_x264
 BUILD_CCFLAGS="-flto -msse2 -fexcess-precision=fast -mfpmath=sse -ffast-math -fomit-frame-pointer -fno-ident -I${INSTALL_DIR}/include" 
 BUILD_LDFLAGS="-flto -static -static-libgcc -Wl,--gc-sections -Wl,--strip-all -L${INSTALL_DIR}/lib"
-MAKE_PROCESS=$NUMBER_OF_PROCESSORS
 X264_MAKEFILE_PATCH="`pwd`/patch/x264_makefile.diff"
-PROFILE_GEN_CC="-fprofile-generate -gline-tables-only"
-PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
-PROFILE_USE_CC="-fprofile-use"
-PROFILE_USE_LD="-fprofile-use"
+X264_REV=${X264_REV:-}
+X264_BRANCH=${X264_BRANCH:-"master"}
+if [ -n "$MSYSTEM" ]; then
+    MAKE_PROCESS=$NUMBER_OF_PROCESSORS
+else
+    MAKE_PROCESS=$(nproc)
+fi
 
 #download
 mkdir -p $BUILD_DIR/src
 cd $BUILD_DIR/src
 git config --global core.autocrlf false
 
-if [ $MSYSTEM = "MINGW32" ]; then
-    TARGET_ARCH="x86"
-    BUILD_CCFLAGS="-m32 ${BUILD_CCFLAGS}"
-else
-    TARGET_ARCH="x64"
+TARGET_ARCH="x64"
+export CC=${CC:-gcc}
+export CXX=${CXX:-g++}
+if [ -n "$MSYSTEM" ]; then
+    if [ $MSYSTEM = "MINGW32" ]; then
+        TARGET_ARCH="x86"
+        BUILD_CCFLAGS="-m32 ${BUILD_CCFLAGS}"
+    else
+        TARGET_ARCH="x64"
+    fi
+    if [ $MSYSTEM == "CLANG64" ]; then
+        export CC=clang
+        export CXX=clang++
+    fi
 fi
 
-if [ $MSYSTEM == "CLANG64" ]; then
-    export CC=clang
-    export CXX=clang++
+if [ $CC == "clang" ]; then
+    PROFILE_GEN_CC="-fprofile-generate -gline-tables-only"
+    PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
+    PROFILE_USE_CC="-fprofile-use"
+    PROFILE_USE_LD="-fprofile-use"
+else
+    PROFILE_GEN_CC=
+    PROFILE_GEN_LD=
+    PROFILE_USE_CC=
+    PROFILE_USE_LD=
 fi
 
 INSTALL_DIR=$BUILD_DIR/$TARGET_ARCH/build
@@ -36,7 +54,14 @@ if [ -d "x264" ]; then
     git pull
     cd ..
 else
-	git clone https://code.videolan.org/videolan/x264.git
+    git clone https://code.videolan.org/videolan/x264.git
+fi
+
+if [ "${X264_REV}" != "" ]; then
+    git checkout --force ${X264_REV}
+else
+    git checkout --force ${X264_BRANCH}
+    git reset --hard origin/${X264_BRANCH}
 fi
 
 if [ -d "l-smash" ]; then
@@ -44,7 +69,7 @@ if [ -d "l-smash" ]; then
     git pull
     cd ..
 else
-	git clone https://github.com/l-smash/l-smash.git l-smash
+    git clone https://github.com/l-smash/l-smash.git l-smash
 fi
 
 mkdir -p $BUILD_DIR/$TARGET_ARCH
@@ -79,7 +104,6 @@ export X264_REV=$X264_REV
 PKG_CONFIG_PATH=${INSTALL_DIR}/lib/pkgconfig \
 ./configure \
  --prefix=$INSTALL_DIR \
- --host=$MINGW_CHOST \
  --disable-strip \
  --disable-ffms \
  --disable-gpac \
@@ -87,73 +111,81 @@ PKG_CONFIG_PATH=${INSTALL_DIR}/lib/pkgconfig \
  --bit-depth=all \
  --extra-cflags="-O3 ${BUILD_CCFLAGS} ${PROFILE_GEN_CC}" \
  --extra-ldflags="${BUILD_LDFLAGS} ${PROFILE_GEN_LD}"
-make -j$MAKE_PROCESS
 
-prof_files=()
-prof_idx=0
 
-function run_prof() {
-    ./x264 $@
-    prof_idx=$((prof_idx + 1))
-    for file in default_*_0.profraw; do
-      new_file="${file%.profraw}_${prof_idx}.${file##*.}"
-      mv "$file" "$new_file"
-      echo ${new_file}
-      prof_files+=( ${new_file} )
-    done
-}
+if [ $CC == "clang" ]; then
 
-INPUT_OPTION="--demuxer raw --input-depth 8 --input-res 1280x720 --fps 30/1"
+    make -j$MAKE_PROCESS
 
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --frames 50 -q0 -m9 -r2 --me hex -Aall
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --frames 50 -q0 -m9 -r2 --me hex -Aall
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
+    prof_files=()
+    prof_idx=0
+    
+    function run_prof() {
+        ./x264 $@
+        prof_idx=$((prof_idx + 1))
+        for file in default_*_0.profraw; do
+        new_file="${file%.profraw}_${prof_idx}.${file##*.}"
+        mv "$file" "$new_file"
+        echo ${new_file}
+        prof_files+=( ${new_file} )
+        done
+    }
+    
+    INPUT_OPTION="--demuxer raw --input-depth 8 --input-res 1280x720 --fps 30/1"
+    
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --frames 50 -q0 -m9 -r2 --me hex -Aall
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --frames 50 -q0 -m9 -r2 --me hex -Aall
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx2 --output-depth 10 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
+    
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --frames 50 -q0 -m9 -r2 --me hex -Aall
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --frames 50 -q0 -m9 -r2 --me hex -Aall
+    run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
+    
+    echo ${prof_files[@]}
+    llvm-profdata merge -output=default.profdata "${prof_files[@]}"
+    
+    PROFILE_USE_CC=${PROFILE_USE_CC}=`pwd`/default.profdata
+    PROFILE_USE_LD=${PROFILE_USE_LD}=`pwd`/default.profdata
 
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --frames 50 -q0 -m9 -r2 --me hex -Aall
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 30 -b1 -m1 -r1 --me dia --no-cabac --direct temporal --ssim --no-weightb
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 16 -b2 -m3 -r3 --me hex --no-8x8dct --direct spatial --no-dct-decimate -t0  --slice-max-mbs 50
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 26 -b4 -m5 -r2 --me hex --cqm jvt --nr 100 --psnr --no-mixed-refs --b-adapt 2 --slice-max-size 1500
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 18 -b3 -m9 -r5 --me umh -t1 -A all --b-pyramid normal --direct auto --no-fast-pskip --no-mbtree
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --crf 22 -b3 -m7 -r4 --me esa -t2 -A all --psy-rd 1.0:1.0 --slices 4
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --frames 50 --crf 24 -b3 -m10 -r3 --me tesa -t2
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --frames 50 -q0 -m9 -r2 --me hex -Aall
-run_prof "${YUV_PATH}" ${INPUT_OPTION} -o /dev/null --asm avx512 --output-depth 10 --frames 50 -q0 -m2 -r1 --me hex --no-cabac
+    PKG_CONFIG_PATH=${INSTALL_DIR}/lib/pkgconfig \
+    ./configure \
+     --prefix=$INSTALL_DIR \
+     --host=$MINGW_CHOST \
+     --enable-strip \
+     --disable-ffms \
+     --disable-gpac \
+     --disable-lavf \
+     --bit-depth=all \
+     --extra-cflags="-O3 ${BUILD_CCFLAGS} ${PROFILE_USE_CC}" \
+     --extra-ldflags="${BUILD_LDFLAGS} ${PROFILE_USE_LD}"
+    make -j$MAKE_PROCESS
 
-echo ${prof_files[@]}
-llvm-profdata merge -output=default.profdata "${prof_files[@]}"
-
-PROFILE_USE_CC=${PROFILE_USE_CC}=`pwd`/default.profdata
-PROFILE_USE_LD=${PROFILE_USE_LD}=`pwd`/default.profdata
-
-PKG_CONFIG_PATH=${INSTALL_DIR}/lib/pkgconfig \
-./configure \
- --prefix=$INSTALL_DIR \
- --host=$MINGW_CHOST \
- --enable-strip \
- --disable-ffms \
- --disable-gpac \
- --disable-lavf \
- --bit-depth=all \
- --extra-cflags="-O3 ${BUILD_CCFLAGS} ${PROFILE_USE_CC}" \
- --extra-ldflags="${BUILD_LDFLAGS} ${PROFILE_USE_LD}"
-make -j$MAKE_PROCESS
+else
+    make fprofiled VIDS="${YUV_PATH}" -j$MAKE_PROCESS
+fi

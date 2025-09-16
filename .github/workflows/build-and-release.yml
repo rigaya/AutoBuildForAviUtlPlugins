@@ -124,8 +124,8 @@ jobs:
             msystem: MINGW32
             mingwenv: i686
           - arch: x64
-            msystem: CLANG64
-            mingwenv: clang-x86_64
+            msystem: MINGW64
+            mingwenv: x86_64
     
     steps:
     - name: Checkout repository
@@ -145,7 +145,6 @@ jobs:
         pacboy: >-
           clang:p
           lld:p
-          llvm:p
           make:p
           pkgconf:p
           
@@ -155,13 +154,14 @@ jobs:
       run: |
         curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
         7z x test_8.7z
+        mv test.yuv test_1280x720.yuv
         
     - name: Build x264
       shell: msys2 {0}
       working-directory: x264
       run: |
         chmod +x build_x264.sh
-        export YUV_PATH="$(pwd)/test.yuv"
+        export YUV_PATH="$(pwd)/test_1280x720.yuv"
         ./build_x264.sh
         
     - name: Get x264 revision number and rename executable
