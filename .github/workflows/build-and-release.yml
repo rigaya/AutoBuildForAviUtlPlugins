@@ -350,6 +350,208 @@ jobs:
         path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}.exe
         retention-days: 30
 
+  build-x264-linux:
+    needs: check-updates
+    if: needs.check-updates.outputs.x264_needs_build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          wget \
+          curl \
+          p7zip-full \
+          nasm \
+          pkg-config \
+          cmake \
+          clang \
+          llvm \
+          xz-utils \
+          zip \
+          tar
+
+    - name: Extract test data
+      working-directory: x264
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        7z x test_8.7z
+        mv test.yuv test_1280x720.yuv
+
+    - name: Build x264 (Linux)
+      working-directory: x264
+      run: |
+        chmod +x build_x264.sh
+        export YUV_PATH="$(pwd)/test_1280x720.yuv"
+        export INSTALL_DIR="$(pwd)/install"
+        CC=gcc CXX=g++ ./build_x264.sh
+
+    - name: Get x264 revision and create tar.xz
+      id: get_rev_linux
+      working-directory: x264
+      run: |
+        cd build_x264/x64/x264
+        REV=$(git rev-list HEAD | wc -l)
+        echo "x264_rev_linux=${REV}" >> $GITHUB_OUTPUT
+        echo "X264 revision (linux): ${REV}"
+        cd -
+        EXE_PATH="$(pwd)/build_x264/x64/x264/x264"
+        if [ -f "$EXE_PATH" ]; then
+          TAR_NAME="x264_${REV}_amd64_linux.tar.xz"
+          tar -C "$(dirname "$EXE_PATH")" -cJf "$TAR_NAME" "$(basename "$EXE_PATH")"
+          echo "Created: ${TAR_NAME}"
+        else
+          echo "Error: x264 executable not found at $EXE_PATH"
+          exit 1
+        fi
+
+    - name: Upload x264 linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x264_${{ steps.get_rev_linux.outputs.x264_rev_linux }}_amd64_linux
+        path: x264/x264_${{ steps.get_rev_linux.outputs.x264_rev_linux }}_amd64_linux.tar.xz
+        retention-days: 30
+
+  build-x265-linux:
+    needs: check-updates
+    if: needs.check-updates.outputs.x265_needs_build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          wget \
+          curl \
+          p7zip-full \
+          nasm \
+          pkg-config \
+          cmake \
+          clang \
+          llvm \
+          xz-utils \
+          zip \
+          tar
+
+    - name: Extract test data
+      working-directory: x265
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        7z x test_8.7z
+
+    - name: Build x265 (Linux)
+      working-directory: x265
+      run: |
+        chmod +x build_x265.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        export INSTALL_DIR="$(pwd)/install"
+        CC=clang CXX=clang++ ./build_x265.sh
+
+    - name: Get x265 version and create tar.xz
+      id: get_version_linux
+      working-directory: x265
+      run: |
+        EXE_PATH="$(pwd)/build_x265/x64/x265/build/msys/8bit/x265"
+        if [ -f "$EXE_PATH" ]; then
+          X265_VER=$($EXE_PATH --version 2>&1 | head -n 1 | sed 's/-/ /g' | awk '{print $6}')
+          echo "x265_ver_linux=${X265_VER}" >> $GITHUB_OUTPUT
+          echo "x265 version (linux): ${X265_VER}"
+          TAR_NAME="x265_${X265_VER}_amd64_linux.tar.xz"
+          tar -C "$(dirname "$EXE_PATH")" -cJf "$TAR_NAME" "$(basename "$EXE_PATH")"
+          echo "Created: ${TAR_NAME}"
+        else
+          echo "Error: x265 executable not found at $EXE_PATH"
+          exit 1
+        fi
+
+    - name: Upload x265 linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265_${{ steps.get_version_linux.outputs.x265_ver_linux }}_amd64_linux
+        path: x265/x265_${{ steps.get_version_linux.outputs.x265_ver_linux }}_amd64_linux.tar.xz
+        retention-days: 30
+
+  build-svtav1-linux:
+    needs: check-updates
+    if: needs.check-updates.outputs.svtav1_needs_build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          wget \
+          curl \
+          p7zip-full \
+          nasm \
+          pkg-config \
+          cmake \
+          clang \
+          llvm \
+          xz-utils \
+          zip \
+          tar
+
+    - name: Extract test data
+      working-directory: svtav1
+      run: |
+        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
+        7z x test_8.7z
+        7z x test_10.7z
+
+    - name: Build svtav1 (Linux)
+      working-directory: svtav1
+      run: |
+        chmod +x build_svtav1.sh
+        export YUV_PATH="$(pwd)/test.yuv"
+        export YUV_PATH_10="$(pwd)/test_10.yuv"
+        export INSTALL_DIR="$(pwd)/install"
+        CC=clang CXX=clang++ ./build_svtav1.sh
+
+    - name: Get SVT-AV1 version and create tar.xz
+      id: get_version_linux_svt
+      working-directory: svtav1
+      run: |
+        EXE_PATH="$(pwd)/build_svtav1/x64/SVT-AV1/Bin/Release/SvtAv1EncApp"
+        if [ -f "$EXE_PATH" ]; then
+          SVTAV1_REV=$($EXE_PATH --version | cut -d ' ' -f 2)
+          SVTAV1_REV=${SVTAV1_REV:1:-10}
+          echo "svtav1_rev_linux=${SVTAV1_REV}" >> $GITHUB_OUTPUT
+          echo "SVT-AV1 version (linux): ${SVTAV1_REV}"
+          TAR_NAME="SvtAv1EncApp_${SVTAV1_REV}_amd64_linux.tar.xz"
+          tar -C "$(dirname "$EXE_PATH")" -cJf "$TAR_NAME" "$(basename "$EXE_PATH")"
+          echo "Created: ${TAR_NAME}"
+        else
+          echo "Error: SvtAv1EncApp executable not found at $EXE_PATH"
+          exit 1
+        fi
+
+    - name: Upload SVT-AV1 linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux
+        path: svtav1/SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux.tar.xz
+        retention-days: 30
+
   download-existing-x264:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x264_needs_build == 'false'
@@ -458,8 +660,83 @@ jobs:
         path: svtav1_artifacts/
         retention-days: 30
 
+  download-existing-x264-linux:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x264_needs_build == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download existing x264 linux files from latest release
+      run: |
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
+        echo "Downloading existing x264 linux files..."
+        mkdir -p x264_linux_artifacts
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x264_.*_amd64_linux\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+          echo "Downloading $name"
+          curl -L -o "x264_linux_artifacts/$name" "$url"
+        done
+        echo "Downloaded x264 linux files:"
+        ls -la x264_linux_artifacts/ || true
+
+    - name: Upload x264 linux reused artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: reused-x264-linux
+        path: x264_linux_artifacts/
+        retention-days: 30
+
+  download-existing-x265-linux:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x265_needs_build == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download existing x265 linux files from latest release
+      run: |
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
+        echo "Downloading existing x265 linux files..."
+        mkdir -p x265_linux_artifacts
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x265_.*_amd64_linux\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+          echo "Downloading $name"
+          curl -L -o "x265_linux_artifacts/$name" "$url"
+        done
+        echo "Downloaded x265 linux files:"
+        ls -la x265_linux_artifacts/ || true
+
+    - name: Upload x265 linux reused artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: reused-x265-linux
+        path: x265_linux_artifacts/
+        retention-days: 30
+
+  download-existing-svtav1-linux:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.svtav1_needs_build == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download existing SVT-AV1 linux files from latest release
+      run: |
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
+        echo "Downloading existing SVT-AV1 linux files..."
+        mkdir -p svtav1_linux_artifacts
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^SvtAv1EncApp_.*_amd64_linux\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+          echo "Downloading $name"
+          curl -L -o "svtav1_linux_artifacts/$name" "$url"
+        done
+        echo "Downloaded SVT-AV1 linux files:"
+        ls -la svtav1_linux_artifacts/ || true
+
+    - name: Upload SVT-AV1 linux reused artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: reused-svtav1-linux
+        path: svtav1_linux_artifacts/
+        retention-days: 30
+
   create-release:
-    needs: [check-updates, build-x264, build-x265, build-svtav1, download-existing-x264, download-existing-x265, download-existing-svtav1]
+    needs: [check-updates, build-x264, build-x265, build-svtav1, build-x264-linux, build-x265-linux, build-svtav1-linux, download-existing-x264, download-existing-x265, download-existing-svtav1, download-existing-x264-linux, download-existing-x265-linux, download-existing-svtav1-linux]
     if: always() && needs.check-updates.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     
@@ -491,8 +768,10 @@ jobs:
         
     - name: List downloaded artifacts
       run: |
-        echo "Downloaded artifacts:"
+        echo "Downloaded artifacts (exe):"
         find artifacts/ -type f -name "*.exe" | sort
+        echo "Downloaded artifacts (tar.xz):"
+        find artifacts/ -type f -name "*.tar.xz" | sort
         
     - name: Create zip files from executables
       run: |
@@ -505,6 +784,8 @@ jobs:
           # -jオプションでディレクトリ構造を除外してzipファイルを作成
           zip -j "zipped_artifacts/${name_without_ext}.zip" "$file"
         done
+        # 既にtar.xz化されたLinux成果物はそのまま収集
+        find artifacts/ -type f -name "*.tar.xz" -exec cp {} zipped_artifacts/ \;
         
         # build_rev.txtもzipped_artifactsディレクトリにコピー
         cp build_rev.txt zipped_artifacts/
@@ -514,20 +795,59 @@ jobs:
         
     - name: Create release body
       run: |
-        # リリースメッセージを作成
-        cat > release_body.md << 'EOF'
-        ## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
-        
-        ### x264
-        - x86/x64用
-        
-        ### x265
-        - 8bit/10bit/12bitビット深度をサポート
-        - x86/x64用
-        
-        ### SVT-AV1
-        - x64版のみ
-        EOF
+        TAG="auto-build-${{ steps.datetime.outputs.datetime }}"
+        REPO="${{ github.repository }}"
+
+        # ファイル名の抽出（Windows）
+        X264_X64_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x264_*_x64.zip' | sort | tail -n1 2>/dev/null)" || true)
+        X264_X86_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x264_*_x86.zip' | sort | tail -n1 2>/dev/null)" || true)
+        X265_X64_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x265_*_x64.zip' | sort | tail -n1 2>/dev/null)" || true)
+        X265_X86_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x265_*_x86.zip' | sort | tail -n1 2>/dev/null)" || true)
+        SVT_WIN_X64_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_x64.zip' | sort | tail -n1 2>/dev/null)" || true)
+
+        # ファイル名の抽出（Linux; tar.xz）
+        X264_LINUX_TXZ=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x264_*_amd64_linux.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
+        X265_LINUX_TXZ=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x265_*_amd64_linux.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
+        SVT_LINUX_TXZ=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_amd64_linux.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
+
+        link() {
+          local fname="$1"
+          if [ -n "$fname" ] && [ -f "zipped_artifacts/$fname" ]; then
+            echo "[$fname](https://github.com/$REPO/releases/download/$TAG/$fname)"
+          else
+            echo "-"
+          fi
+        }
+
+        X264_X64_LINK=$(link "$X264_X64_ZIP")
+        X264_X86_LINK=$(link "$X264_X86_ZIP")
+        X265_X64_LINK=$(link "$X265_X64_ZIP")
+        X265_X86_LINK=$(link "$X265_X86_ZIP")
+        SVT_WIN_X64_LINK=$(link "$SVT_WIN_X64_ZIP")
+
+        X264_LINUX_LINK=$(link "$X264_LINUX_TXZ")
+        X265_LINUX_LINK=$(link "$X265_LINUX_TXZ")
+        SVT_LINUX_LINK=$(link "$SVT_LINUX_TXZ")
+
+        {
+          echo "## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}"
+          echo
+          echo "### Windows"
+          echo
+          echo "| エンコーダ | ダウンロードリンク |"
+          echo "|:--|:--|"
+          echo "| x264 | ${X264_X64_LINK}, ${X264_X86_LINK} |"
+          echo "| x265 | ${X265_X64_LINK}, ${X265_X86_LINK} |"
+          echo "| svt-av1 | ${SVT_WIN_X64_LINK} |"
+          echo
+          echo "### Linux"
+          echo
+          echo "| エンコーダ | ダウンロードリンク |"
+          echo "|:--|:--|"
+          echo "| x264 | ${X264_LINUX_LINK} |"
+          echo "| x265 | ${X265_LINUX_LINK} |"
+          echo "| svt-av1 | ${SVT_LINUX_LINK} |"
+        } > release_body.md
         
     - name: Create release and upload files
       uses: softprops/action-gh-release@v2
@@ -537,6 +857,7 @@ jobs:
         body_path: release_body.md
         files: |
           zipped_artifacts/*.zip
+          zipped_artifacts/*.tar.xz
           zipped_artifacts/build_rev.txt
         draft: false
         prerelease: false
@@ -554,6 +875,9 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### アップロードされたファイル:" >> $GITHUB_STEP_SUMMARY
         find zipped_artifacts/ -type f -name "*.zip" | while read file; do
+          echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
+        done
+        find zipped_artifacts/ -type f -name "*.tar.xz" | while read file; do
           echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
         done
         echo "- build_rev.txt" >> $GITHUB_STEP_SUMMARY
