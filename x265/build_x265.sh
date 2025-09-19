@@ -70,6 +70,10 @@ else
     exit
 fi
 
+if [ ! -n "$INSTALL_DIR" ]; then
+  INSTALL_DIR=$BUILD_DIR/$TARGET_ARCH/build
+fi
+
 #--- ソースのダウンロード ---------------------------------------
 if [ -d "x265" ]; then
     if [ $UPDATE_X265 != "FALSE" ]; then
@@ -189,6 +193,7 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
         -DENABLE_MULTIVIEW=ON \
         -DENABLE_SCC_EXT=ON \
         ${CMAKE_PROFILE_ARG} \
+        -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
         -DCMAKE_C_FLAGS="${BUILD_CCFLAGS} ${PROFILE_GEN_CC}" \
         -DCMAKE_CXX_FLAGS="${BUILD_CCFLAGS} ${PROFILE_GEN_CC}" \
         -DCMAKE_EXE_LINKER_FLAGS="${BUILD_LDFLAGS} ${PROFILE_GEN_LD}"
@@ -330,6 +335,7 @@ cmake -G "${CMAKE_TARGET}" ../../../source \
     -DENABLE_MULTIVIEW=ON \
     -DENABLE_SCC_EXT=ON \
     ${CMAKE_PROFILE_ARG} \
+    -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
     -DCMAKE_C_FLAGS="${BUILD_CCFLAGS} ${PROFILE_USE_CC}" \
     -DCMAKE_CXX_FLAGS="${BUILD_CCFLAGS} ${PROFILE_USE_CC}" \
     -DCMAKE_EXE_LINKER_FLAGS="${BUILD_LDFLAGS} ${PROFILE_USE_LD}"
