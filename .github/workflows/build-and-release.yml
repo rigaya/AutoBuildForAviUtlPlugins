@@ -850,6 +850,7 @@ jobs:
         } > release_body.md
         
     - name: Create release and upload files
+      if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/actions') }}
       uses: softprops/action-gh-release@v2
       with:
         tag_name: auto-build-${{ steps.datetime.outputs.datetime }}
