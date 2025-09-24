@@ -182,6 +182,27 @@ jobs:
           exit 1
         fi
         
+    - name: Test x264 encoder
+      shell: msys2 {0}
+      working-directory: x264
+      run: |
+        echo "Testing x264 encoder..."
+        EXE_PATH="build_x264/${{ matrix.arch }}/x264/x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe"
+        if [ -f "$EXE_PATH" ]; then
+          echo "Running x264 test with fast preset..."
+          # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
+          "$EXE_PATH" --demuxer raw --input-depth 8 --input-res 1280x720 --fps 30/1 --input "$(pwd)/test_1280x720.yuv" -o /dev/null --preset faster --frames 30
+          if [ $? -eq 0 ]; then
+            echo "x264 test completed successfully!"
+          else
+            echo "Error: x264 test failed with exit code $?"
+            exit 1
+          fi
+        else
+          echo "Error: x264 executable not found at $EXE_PATH"
+          exit 1
+        fi
+        
     - name: Upload x264 artifact
       uses: actions/upload-artifact@v4
       with:
@@ -259,6 +280,27 @@ jobs:
           echo "Renamed to: ${NEW_NAME}"
         else
           echo "Error: x265.exe not found at $EXE_PATH"
+          exit 1
+        fi
+        
+    - name: Test x265 encoder
+      shell: msys2 {0}
+      working-directory: x265
+      run: |
+        echo "Testing x265 encoder..."
+        EXE_PATH="build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}.exe"
+        if [ -f "$EXE_PATH" ]; then
+          echo "Running x265 test with fast preset..."
+          # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
+          "$EXE_PATH" --input "$(pwd)/test.yuv" --input-depth 8 --input-csp i420 --input-res 1280x720 --fps 30/1 -o /dev/null --preset faster --frames 30
+          if [ $? -eq 0 ]; then
+            echo "x265 test completed successfully!"
+          else
+            echo "Error: x265 test failed with exit code $?"
+            exit 1
+          fi
+        else
+          echo "Error: x265 executable not found at $EXE_PATH"
           exit 1
         fi
         
@@ -343,6 +385,27 @@ jobs:
           exit 1
         fi
         
+    - name: Test SVT-AV1 encoder
+      shell: msys2 {0}
+      working-directory: svtav1
+      run: |
+        echo "Testing SVT-AV1 encoder..."
+        EXE_PATH="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}.exe"
+        if [ -f "$EXE_PATH" ]; then
+          echo "Running SVT-AV1 test with fast preset..."
+          # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
+          "$EXE_PATH" -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "$(pwd)/test.yuv" --preset 8 --frames 30
+          if [ $? -eq 0 ]; then
+            echo "SVT-AV1 test completed successfully!"
+          else
+            echo "Error: SVT-AV1 test failed with exit code $?"
+            exit 1
+          fi
+        else
+          echo "Error: SvtAv1EncApp executable not found at $EXE_PATH"
+          exit 1
+        fi
+        
     - name: Upload SVT-AV1 artifact
       uses: actions/upload-artifact@v4
       with:
@@ -406,6 +469,26 @@ jobs:
           TAR_NAME="x264_${REV}_amd64_linux.tar.xz"
           tar -C "$(dirname "$EXE_PATH")" -cJf "$TAR_NAME" "$(basename "$EXE_PATH")"
           echo "Created: ${TAR_NAME}"
+        else
+          echo "Error: x264 executable not found at $EXE_PATH"
+          exit 1
+        fi
+
+    - name: Test x264 encoder (Linux)
+      working-directory: x264
+      run: |
+        echo "Testing x264 encoder (Linux)..."
+        EXE_PATH="$(pwd)/build_x264/x64/x264/x264"
+        if [ -f "$EXE_PATH" ]; then
+          echo "Running x264 test with fast preset..."
+          # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
+          "$EXE_PATH" --demuxer raw --input-depth 8 --input-res 1280x720 --fps 30/1 --input "$(pwd)/test_1280x720.yuv" -o /dev/null --preset faster --frames 30
+          if [ $? -eq 0 ]; then
+            echo "x264 test completed successfully!"
+          else
+            echo "Error: x264 test failed with exit code $?"
+            exit 1
+          fi
         else
           echo "Error: x264 executable not found at $EXE_PATH"
           exit 1
@@ -476,6 +559,26 @@ jobs:
           exit 1
         fi
 
+    - name: Test x265 encoder (Linux)
+      working-directory: x265
+      run: |
+        echo "Testing x265 encoder (Linux)..."
+        EXE_PATH="$(pwd)/build_x265/x64/x265/build/msys/8bit/x265"
+        if [ -f "$EXE_PATH" ]; then
+          echo "Running x265 test with fast preset..."
+          # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
+          "$EXE_PATH" --input "$(pwd)/test.yuv" --input-depth 8 --input-csp i420 --input-res 1280x720 --fps 30/1 -o /dev/null --preset faster --frames 30
+          if [ $? -eq 0 ]; then
+            echo "x265 test completed successfully!"
+          else
+            echo "Error: x265 test failed with exit code $?"
+            exit 1
+          fi
+        else
+          echo "Error: x265 executable not found at $EXE_PATH"
+          exit 1
+        fi
+
     - name: Upload x265 linux artifact
       uses: actions/upload-artifact@v4
       with:
@@ -540,6 +643,26 @@ jobs:
           TAR_NAME="SvtAv1EncApp_${SVTAV1_REV}_amd64_linux.tar.xz"
           tar -C "$(dirname "$EXE_PATH")" -cJf "$TAR_NAME" "$(basename "$EXE_PATH")"
           echo "Created: ${TAR_NAME}"
+        else
+          echo "Error: SvtAv1EncApp executable not found at $EXE_PATH"
+          exit 1
+        fi
+
+    - name: Test SVT-AV1 encoder (Linux)
+      working-directory: svtav1
+      run: |
+        echo "Testing SVT-AV1 encoder (Linux)..."
+        EXE_PATH="$(pwd)/build_svtav1/x64/SVT-AV1/Bin/Release/SvtAv1EncApp"
+        if [ -f "$EXE_PATH" ]; then
+          echo "Running SVT-AV1 test with fast preset..."
+          # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
+          "$EXE_PATH" -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "$(pwd)/test.yuv" --preset 8 --frames 30
+          if [ $? -eq 0 ]; then
+            echo "SVT-AV1 test completed successfully!"
+          else
+            echo "Error: SVT-AV1 test failed with exit code $?"
+            exit 1
+          fi
         else
           echo "Error: SvtAv1EncApp executable not found at $EXE_PATH"
           exit 1
