@@ -320,8 +320,13 @@ jobs:
       matrix:
         include:
           - arch: x64
+            compiler: clang
             msystem: CLANG64
             mingwenv: clang-x86_64
+          - arch: x64
+            compiler: gcc
+            msystem: MINGW64
+            mingwenv: x86_64
     
     steps:
     - name: Checkout repository
@@ -362,6 +367,13 @@ jobs:
         chmod +x build_svtav1.sh
         export YUV_PATH="$(pwd)/test.yuv"
         export YUV_PATH_10="$(pwd)/test_10.yuv"
+        if [ "${{ matrix.compiler }}" = "gcc" ]; then
+          export CC=gcc
+          export CXX=g++
+        else
+          export CC=clang
+          export CXX=clang++
+        fi
         ./build_svtav1.sh
         
     - name: Get SVT-AV1 version and rename executable
@@ -377,7 +389,7 @@ jobs:
           echo "SVT-AV1 version: ${SVTAV1_REV}"
           
           # リネーム
-          NEW_NAME="SvtAv1EncApp_${SVTAV1_REV}_${{ matrix.arch }}.exe"
+          NEW_NAME="SvtAv1EncApp_${SVTAV1_REV}_${{ matrix.arch }}_${{ matrix.compiler }}.exe"
           cp "$EXE_PATH_ORG" "build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/${NEW_NAME}"
           echo "Renamed to: ${NEW_NAME}"
         else
@@ -390,7 +402,7 @@ jobs:
       working-directory: svtav1
       run: |
         echo "Testing SVT-AV1 encoder..."
-        EXE_PATH="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}.exe"
+        EXE_PATH="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}_${{ matrix.compiler }}.exe"
         if [ -f "$EXE_PATH" ]; then
           echo "Running SVT-AV1 test with fast preset..."
           # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
@@ -409,8 +421,8 @@ jobs:
     - name: Upload SVT-AV1 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}
-        path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}.exe
+        name: SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}_${{ matrix.compiler }}
+        path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}_${{ matrix.compiler }}.exe
         retention-days: 30
 
   build-x264-linux:
@@ -591,6 +603,15 @@ jobs:
     if: needs.check-updates.outputs.svtav1_needs_build == 'true'
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            compiler: clang
+          - arch: x64
+            compiler: gcc
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -628,7 +649,11 @@ jobs:
         export YUV_PATH="$(pwd)/test.yuv"
         export YUV_PATH_10="$(pwd)/test_10.yuv"
         export INSTALL_DIR="$(pwd)/install"
-        CC=clang CXX=clang++ ./build_svtav1.sh
+        if [ "${{ matrix.compiler }}" = "gcc" ]; then
+          CC=gcc CXX=g++ ./build_svtav1.sh
+        else
+          CC=clang CXX=clang++ ./build_svtav1.sh
+        fi
 
     - name: Get SVT-AV1 version and create tar.xz
       id: get_version_linux_svt
@@ -640,7 +665,7 @@ jobs:
           SVTAV1_REV=${SVTAV1_REV:1:-10}
           echo "svtav1_rev_linux=${SVTAV1_REV}" >> $GITHUB_OUTPUT
           echo "SVT-AV1 version (linux): ${SVTAV1_REV}"
-          TAR_NAME="SvtAv1EncApp_${SVTAV1_REV}_amd64_linux.tar.xz"
+          TAR_NAME="SvtAv1EncApp_${SVTAV1_REV}_amd64_linux_${{ matrix.compiler }}.tar.xz"
           tar -C "$(dirname "$EXE_PATH")" -cJf "$TAR_NAME" "$(basename "$EXE_PATH")"
           echo "Created: ${TAR_NAME}"
         else
@@ -671,8 +696,8 @@ jobs:
     - name: Upload SVT-AV1 linux artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux
-        path: svtav1/SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux.tar.xz
+        name: SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux_${{ matrix.compiler }}
+        path: svtav1/SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux_${{ matrix.compiler }}.tar.xz
         retention-days: 30
 
   download-existing-x264:
@@ -844,7 +869,7 @@ jobs:
         LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
         echo "Downloading existing SVT-AV1 linux files..."
         mkdir -p svtav1_linux_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^SvtAv1EncApp_.*_amd64_linux\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
+        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^SvtAv1EncApp_.*_amd64_linux_(clang|gcc)\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
           echo "Downloading $name"
           curl -L -o "svtav1_linux_artifacts/$name" "$url"
         done
@@ -926,12 +951,14 @@ jobs:
         X264_X86_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x264_*_x86.zip' | sort | tail -n1 2>/dev/null)" || true)
         X265_X64_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x265_*_x64.zip' | sort | tail -n1 2>/dev/null)" || true)
         X265_X86_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x265_*_x86.zip' | sort | tail -n1 2>/dev/null)" || true)
-        SVT_WIN_X64_ZIP=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_x64.zip' | sort | tail -n1 2>/dev/null)" || true)
+        SVT_WIN_X64_ZIP_CLANG=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_x64_clang.zip' | sort | tail -n1 2>/dev/null)" || true)
+        SVT_WIN_X64_ZIP_GCC=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_x64_gcc.zip' | sort | tail -n1 2>/dev/null)" || true)
 
         # ファイル名の抽出（Linux; tar.xz）
         X264_LINUX_TXZ=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x264_*_amd64_linux.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
         X265_LINUX_TXZ=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'x265_*_amd64_linux.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
-        SVT_LINUX_TXZ=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_amd64_linux.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
+        SVT_LINUX_TXZ_CLANG=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_amd64_linux_clang.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
+        SVT_LINUX_TXZ_GCC=$(basename "$(find zipped_artifacts -maxdepth 1 -type f -name 'SvtAv1EncApp_*_amd64_linux_gcc.tar.xz' | sort | tail -n1 2>/dev/null)" || true)
 
         link() {
           local fname="$1"
@@ -946,11 +973,13 @@ jobs:
         X264_X86_LINK=$(link "$X264_X86_ZIP")
         X265_X64_LINK=$(link "$X265_X64_ZIP")
         X265_X86_LINK=$(link "$X265_X86_ZIP")
-        SVT_WIN_X64_LINK=$(link "$SVT_WIN_X64_ZIP")
+        SVT_WIN_X64_CLANG_LINK=$(link "$SVT_WIN_X64_ZIP_CLANG")
+        SVT_WIN_X64_GCC_LINK=$(link "$SVT_WIN_X64_ZIP_GCC")
 
         X264_LINUX_LINK=$(link "$X264_LINUX_TXZ")
         X265_LINUX_LINK=$(link "$X265_LINUX_TXZ")
-        SVT_LINUX_LINK=$(link "$SVT_LINUX_TXZ")
+        SVT_LINUX_CLANG_LINK=$(link "$SVT_LINUX_TXZ_CLANG")
+        SVT_LINUX_GCC_LINK=$(link "$SVT_LINUX_TXZ_GCC")
 
         {
           echo "## 自動ビルド - ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}"
@@ -961,7 +990,7 @@ jobs:
           echo "|:--|:--|"
           echo "| x264 | ${X264_X64_LINK}, ${X264_X86_LINK} |"
           echo "| x265 | ${X265_X64_LINK}, ${X265_X86_LINK} |"
-          echo "| svt-av1 | ${SVT_WIN_X64_LINK} |"
+          echo "| svt-av1 | ${SVT_WIN_X64_CLANG_LINK}, ${SVT_WIN_X64_GCC_LINK} |"
           echo
           echo "### Linux"
           echo
@@ -969,7 +998,7 @@ jobs:
           echo "|:--|:--|"
           echo "| x264 | ${X264_LINUX_LINK} |"
           echo "| x265 | ${X265_LINUX_LINK} |"
-          echo "| svt-av1 | ${SVT_LINUX_LINK} |"
+          echo "| svt-av1 | ${SVT_LINUX_CLANG_LINK}, ${SVT_LINUX_GCC_LINK} |"
         } > release_body.md
         
     - name: Create release and upload files
