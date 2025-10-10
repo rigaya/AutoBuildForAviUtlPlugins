@@ -191,7 +191,7 @@ jobs:
         if [ -f "$EXE_PATH" ]; then
           echo "Running x264 test with fast preset..."
           # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
-          "$EXE_PATH" --demuxer raw --input-depth 8 --input-res 1280x720 --fps 30/1 --input "$(pwd)/test_1280x720.yuv" -o /dev/null --preset faster --frames 30
+          "$EXE_PATH" --demuxer raw --input-depth 8 --input-res 1280x720 --fps 30/1 -o /dev/null --preset faster --frames 30 "$(pwd)/test_1280x720.yuv"
           if [ $? -eq 0 ]; then
             echo "x264 test completed successfully!"
           else
