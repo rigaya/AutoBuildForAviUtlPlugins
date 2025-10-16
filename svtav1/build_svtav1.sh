@@ -50,8 +50,10 @@ fi
 ENABLE_PGO=ON
 if [ $CXX == "clang++" ]; then
   ENABLE_PGO=ON
-  # extend stack to 32MB to avoid stack overflow
-  BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--stack,33554432"
+  # extend stack to 32MB to avoid stack overflow (MinGW/Windows only)
+  if [ -n "$MSYSTEM" ]; then
+    BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--stack,33554432"
+  fi
 fi
 
 if [ $ENABLE_PGO == "ON" ]; then
