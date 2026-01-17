@@ -323,10 +323,6 @@ jobs:
             compiler: clang
             msystem: CLANG64
             mingwenv: clang-x86_64
-          - arch: x64
-            compiler: gcc
-            msystem: MINGW64
-            mingwenv: x86_64
     
     steps:
     - name: Checkout repository
