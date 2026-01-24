@@ -380,7 +380,9 @@ jobs:
         EXE_PATH_ORG="build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp.exe"
         if [ -f "$EXE_PATH_ORG" ]; then
           SVTAV1_REV=$($EXE_PATH_ORG --version | cut -d ' ' -f 2)
-          SVTAV1_REV=${SVTAV1_REV:1:-10}
+          SVTAV1_REV=${SVTAV1_REV#v}
+          # 最後の "-" 以降を削除（開発版のコミットハッシュ部分を除去）
+          SVTAV1_REV=${SVTAV1_REV%-*}
           echo "svtav1_rev=${SVTAV1_REV}" >> $GITHUB_OUTPUT
           echo "SVT-AV1 version: ${SVTAV1_REV}"
           
@@ -658,7 +660,9 @@ jobs:
         EXE_PATH="$(pwd)/build_svtav1/x64/SVT-AV1/Bin/Release/SvtAv1EncApp"
         if [ -f "$EXE_PATH" ]; then
           SVTAV1_REV=$($EXE_PATH --version | cut -d ' ' -f 2)
-          SVTAV1_REV=${SVTAV1_REV:1:-10}
+          SVTAV1_REV=${SVTAV1_REV#v}
+          # 最後の "-" 以降を削除（開発版のコミットハッシュ部分を除去）
+          SVTAV1_REV=${SVTAV1_REV%-*}
           echo "svtav1_rev_linux=${SVTAV1_REV}" >> $GITHUB_OUTPUT
           echo "SVT-AV1 version (linux): ${SVTAV1_REV}"
           TAR_NAME="SvtAv1EncApp_${SVTAV1_REV}_amd64_linux_${{ matrix.compiler }}.tar.xz"
