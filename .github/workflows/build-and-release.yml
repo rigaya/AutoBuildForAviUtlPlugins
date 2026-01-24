@@ -607,8 +607,6 @@ jobs:
         include:
           - arch: x64
             compiler: clang
-          - arch: x64
-            compiler: gcc
 
     steps:
     - name: Checkout repository
