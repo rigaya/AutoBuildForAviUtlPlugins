@@ -143,8 +143,7 @@ jobs:
           p7zip
           nasm
         pacboy: >-
-          clang:p
-          lld:p
+          ${{ matrix.msystem == 'CLANG64' && 'clang:p lld:p llvm:p' || '' }}
           make:p
           pkgconf:p
           
@@ -241,9 +240,7 @@ jobs:
           p7zip
           nasm
         pacboy: >-
-          clang:p
-          lld:p
-          llvm:p
+          ${{ matrix.msystem == 'CLANG64' && 'clang:p lld:p llvm:p' || '' }}
           make:p
           pkgconf:p
           cmake:p
