@@ -54,25 +54,25 @@ jobs:
         
     - name: Check for updates
       id: check_updates
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
-        # 最新リリースからbuild_rev.txtをダウンロード
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest" 2>/dev/null || echo "{}")
-        BUILD_REV_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[]? | select(.name == \"build_rev.txt\") | .browser_download_url" 2>/dev/null || echo "")
-        
+        set -euo pipefail
+
         X264_NEEDS_BUILD=true
         X265_NEEDS_BUILD=true
         SVTAV1_NEEDS_BUILD=true
         HAS_UPDATES=false
-        
-        if [ "$BUILD_REV_URL" != "null" ] && [ "$BUILD_REV_URL" != "" ]; then
-          echo "Downloading existing build_rev.txt..."
-          curl -L -o existing_build_rev.txt "${BUILD_REV_URL}"
-          
-          # 各SHAを比較
-          EXISTING_X264_SHA=$(grep "^x264:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
-          EXISTING_X265_SHA=$(grep "^x265:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
-          EXISTING_SVTAV1_SHA=$(grep "^svtav1:" existing_build_rev.txt | cut -d' ' -f2 || echo "")
-          
+
+        # 認証付きで最新リリースの build_rev.txt を取得（rate limit 回避）
+        if gh release download --repo "${{ github.repository }}" -p build_rev.txt -D . 2>/dev/null; then
+          echo "Downloaded existing build_rev.txt from latest release"
+
+          EXISTING_X264_SHA=$(grep "^x264:" build_rev.txt | cut -d' ' -f2 || echo "")
+          EXISTING_X265_SHA=$(grep "^x265:" build_rev.txt | cut -d' ' -f2 || echo "")
+          EXISTING_SVTAV1_SHA=$(grep "^svtav1:" build_rev.txt | cut -d' ' -f2 || echo "")
+          mv build_rev.txt existing_build_rev.txt
+
           if [ "$EXISTING_X264_SHA" = "${{ steps.get_sha.outputs.x264_sha }}" ]; then
             echo "x264 SHA matches existing release: ${{ steps.get_sha.outputs.x264_sha }}"
             X264_NEEDS_BUILD=false
@@ -80,7 +80,7 @@ jobs:
             echo "x264 SHA differs: existing=$EXISTING_X264_SHA, current=${{ steps.get_sha.outputs.x264_sha }}"
             HAS_UPDATES=true
           fi
-          
+
           if [ "$EXISTING_X265_SHA" = "${{ steps.get_sha.outputs.x265_sha }}" ]; then
             echo "x265 SHA matches existing release: ${{ steps.get_sha.outputs.x265_sha }}"
             X265_NEEDS_BUILD=false
@@ -88,7 +88,7 @@ jobs:
             echo "x265 SHA differs: existing=$EXISTING_X265_SHA, current=${{ steps.get_sha.outputs.x265_sha }}"
             HAS_UPDATES=true
           fi
-          
+
           if [ "$EXISTING_SVTAV1_SHA" = "${{ steps.get_sha.outputs.svtav1_sha }}" ]; then
             echo "SVT-AV1 SHA matches existing release: ${{ steps.get_sha.outputs.svtav1_sha }}"
             SVTAV1_NEEDS_BUILD=false
@@ -100,12 +100,12 @@ jobs:
           echo "No existing build_rev.txt found, will build all"
           HAS_UPDATES=true
         fi
-        
+
         echo "x264_needs_build=${X264_NEEDS_BUILD}" >> $GITHUB_OUTPUT
         echo "x265_needs_build=${X265_NEEDS_BUILD}" >> $GITHUB_OUTPUT
         echo "svtav1_needs_build=${SVTAV1_NEEDS_BUILD}" >> $GITHUB_OUTPUT
         echo "has_updates=${HAS_UPDATES}" >> $GITHUB_OUTPUT
-        
+
         echo "Build requirements:"
         echo "x264: $X264_NEEDS_BUILD"
         echo "x265: $X265_NEEDS_BUILD"
@@ -695,108 +695,66 @@ jobs:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x264_needs_build == 'false'
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Download existing x264 files from latest release
-      run: |
-        # 最新リリースを取得
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
-        
-        echo "Downloading existing x264 files..."
-        mkdir -p x264_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x264_.*\\.zip$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
-          echo "Downloading $name"
-          curl -L -o "$name" "$url"
-          # zipを展開してexeを取り出し
-          unzip -q "$name"
-          exe_name=$(echo "$name" | sed 's/\.zip$/\.exe/')
-          if [ -f "$exe_name" ]; then
-            echo "Found $exe_name"
-            mv "$exe_name" "x264_artifacts/"
-          fi
-          rm "$name"
-        done
-        
-        echo "Downloaded x264 files:"
-        ls -la x264_artifacts/
-        
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download existing x264 files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/download-release-assets.sh '^x264_.*\.zip$' x264_downloads --extract-exe
+
     - name: Upload x264 reused artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reused-x264-executables
-        path: x264_artifacts/
+        path: x264_downloads/
+        if-no-files-found: error
         retention-days: 30
 
   download-existing-x265:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x265_needs_build == 'false'
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Download existing x265 files from latest release
-      run: |
-        # 最新リリースを取得
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
-        
-        echo "Downloading existing x265 files..."
-        mkdir -p x265_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x265_.*\\.zip$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
-          echo "Downloading $name"
-          curl -L -o "$name" "$url"
-          # zipを展開してexeを取り出し
-          unzip -q "$name"
-          exe_name=$(echo "$name" | sed 's/\.zip$/\.exe/')
-          if [ -f "$exe_name" ]; then
-            echo "Found $exe_name"
-            mv "$exe_name" "x265_artifacts/"
-          fi
-          rm "$name"
-        done
-        
-        echo "Downloaded x265 files:"
-        ls -la x265_artifacts/
-        
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download existing x265 files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/download-release-assets.sh '^x265_.*\.zip$' x265_downloads --extract-exe
+
     - name: Upload x265 reused artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reused-x265-executables
-        path: x265_artifacts/
+        path: x265_downloads/
+        if-no-files-found: error
         retention-days: 30
 
   download-existing-svtav1:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.svtav1_needs_build == 'false'
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Download existing SVT-AV1 files from latest release
-      run: |
-        # 最新リリースを取得
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
-        
-        echo "Downloading existing SVT-AV1 files..."
-        mkdir -p svtav1_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^SvtAv1EncApp_.*\\.zip$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
-          echo "Downloading $name"
-          curl -L -o "$name" "$url"
-          # zipを展開してexeを取り出し
-          unzip -q "$name"
-          exe_name=$(echo "$name" | sed 's/\.zip$/\.exe/')
-          if [ -f "$exe_name" ]; then
-            echo "Found $exe_name"
-            mv "$exe_name" "svtav1_artifacts/"
-          fi
-          rm "$name"
-        done
-        
-        echo "Downloaded SVT-AV1 files:"
-        ls -la svtav1_artifacts/
-        
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download existing SVT-AV1 files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/download-release-assets.sh '^SvtAv1EncApp_.*\.zip$' svtav1_downloads --extract-exe
+
     - name: Upload SVT-AV1 reused artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reused-svtav1-executables
-        path: svtav1_artifacts/
+        path: svtav1_downloads/
+        if-no-files-found: error
         retention-days: 30
 
   download-existing-x264-linux:
@@ -805,23 +763,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download existing x264 linux files from latest release
-      run: |
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
-        echo "Downloading existing x264 linux files..."
-        mkdir -p x264_linux_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x264_.*_amd64_linux\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
-          echo "Downloading $name"
-          curl -L -o "x264_linux_artifacts/$name" "$url"
-        done
-        echo "Downloaded x264 linux files:"
-        ls -la x264_linux_artifacts/ || true
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download existing x264 linux files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/download-release-assets.sh '^x264_.*_amd64_linux\.tar\.xz$' x264_linux_downloads
 
     - name: Upload x264 linux reused artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reused-x264-linux
-        path: x264_linux_artifacts/
+        path: x264_linux_downloads/
+        if-no-files-found: error
         retention-days: 30
 
   download-existing-x265-linux:
@@ -830,23 +785,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download existing x265 linux files from latest release
-      run: |
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
-        echo "Downloading existing x265 linux files..."
-        mkdir -p x265_linux_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^x265_.*_amd64_linux\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
-          echo "Downloading $name"
-          curl -L -o "x265_linux_artifacts/$name" "$url"
-        done
-        echo "Downloaded x265 linux files:"
-        ls -la x265_linux_artifacts/ || true
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download existing x265 linux files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/download-release-assets.sh '^x265_.*_amd64_linux\.tar\.xz$' x265_linux_downloads
 
     - name: Upload x265 linux reused artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reused-x265-linux
-        path: x265_linux_artifacts/
+        path: x265_linux_downloads/
+        if-no-files-found: error
         retention-days: 30
 
   download-existing-svtav1-linux:
@@ -855,28 +807,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download existing SVT-AV1 linux files from latest release
-      run: |
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/rigaya/AutoBuildForAviUtlPlugins/releases/latest")
-        echo "Downloading existing SVT-AV1 linux files..."
-        mkdir -p svtav1_linux_artifacts
-        echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name | test("^SvtAv1EncApp_.*_amd64_linux_(clang|gcc)\\.tar\\.xz$")) | .name + ":" + .browser_download_url' | while IFS=: read -r name url; do
-          echo "Downloading $name"
-          curl -L -o "svtav1_linux_artifacts/$name" "$url"
-        done
-        echo "Downloaded SVT-AV1 linux files:"
-        ls -la svtav1_linux_artifacts/ || true
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download existing SVT-AV1 linux files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/download-release-assets.sh '^SvtAv1EncApp_.*_amd64_linux_(clang|gcc)\.tar\.xz$' svtav1_linux_downloads
 
     - name: Upload SVT-AV1 linux reused artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reused-svtav1-linux
-        path: svtav1_linux_artifacts/
+        path: svtav1_linux_downloads/
+        if-no-files-found: error
         retention-days: 30
 
   create-release:
     needs: [check-updates, build-x264, build-x265, build-svtav1, build-x264-linux, build-x265-linux, build-svtav1-linux, download-existing-x264, download-existing-x265, download-existing-svtav1, download-existing-x264-linux, download-existing-x265-linux, download-existing-svtav1-linux]
-    if: always() && needs.check-updates.outputs.has_updates == 'true'
+    # skipped は許容し、failure/cancelled のときはリリースしない
+    if: |
+      always()
+      && needs.check-updates.result == 'success'
+      && needs.check-updates.outputs.has_updates == 'true'
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     
     steps:
