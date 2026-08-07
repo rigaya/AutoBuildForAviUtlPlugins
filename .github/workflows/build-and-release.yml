@@ -3,6 +3,9 @@ name: Build and Release
 on:
   push:
     branches: [ master, actions ]
+  schedule:
+    # 毎週土曜 07:00 JST = 金曜 22:00 UTC（デフォルトブランチ master で実行）
+    - cron: '0 22 * * 5'
   workflow_dispatch:
 
 jobs:
