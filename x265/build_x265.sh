@@ -87,7 +87,7 @@ if [ -d "x265" ]; then
     fi
 else
     UPDATE_X265=TRUE
-    git clone https://bitbucket.org/multicoreware/x265_git.git x265
+    git clone https://github.com/Multicorewareinc/x265.git x265
     cd x265
     git fetch
     if [ "${X265_REV}" != "" ]; then

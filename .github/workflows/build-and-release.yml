@@ -35,7 +35,7 @@ jobs:
         cd .. && rm -rf temp_x264
         
         echo "Getting current SHA for x265..."
-        git clone --depth 1 https://bitbucket.org/multicoreware/x265_git.git temp_x265
+        git clone --depth 1 https://github.com/Multicorewareinc/x265.git temp_x265
         cd temp_x265
         X265_SHA=$(git rev-parse HEAD)
         cd .. && rm -rf temp_x265
