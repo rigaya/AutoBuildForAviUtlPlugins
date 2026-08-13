@@ -1,8 +1,8 @@
 #!/bin/bash
-# pacman -S mingw-w64-clang-x86_64-toolchain
+# pacman -S mingw-w64-clang-x86_64-toolchain clang64/mingw-w64-clang-x86_64-cmake
 BUILD_DIR=`pwd`/build_svtav1
-BUILD_CCFLAGS="-Ofast -ffast-math -fomit-frame-pointer -flto"
-BUILD_LDFLAGS="-static -static-libgcc -flto -Wl,--gc-sections -Wl,--strip-all"
+BUILD_CCFLAGS=${BUILD_CCFLAGS:-"-Ofast -ffast-math -fomit-frame-pointer -flto"}
+BUILD_LDFLAGS=${BUILD_LDFLAGS:-"-static -static-libgcc -flto -Wl,--gc-sections -Wl,--strip-all"}
 
 SVTAV1_REV=${SVTAV1_REV:-}
 SVTAV1_BRANCH=${SVTAV1_BRANCH:-"master"}
@@ -23,7 +23,7 @@ mkdir -p $BUILD_DIR/src
 cd $BUILD_DIR/src
 git config --global core.autocrlf false
 
-ENABLE_AVX512="ON"
+ENABLE_AVX512=${ENABLE_AVX512:-"ON"}
 TARGET_ARCH="x64"
 FFMPEG_ARCH="x86_64"
 SVTAV1APPEXE="SvtAv1EncApp.exe"
@@ -32,12 +32,15 @@ if [ -n "$MSYSTEM" ]; then
       echo "This script is for mingw64/clang64 only!"
       exit 1
   fi
-  export CC=${CC:-gcc}
-  export CXX=${CXX:-g++}
   if [ $MSYSTEM == "CLANG64" ]; then
-      export CC=clang
-      export CXX=clang++
+      export CC=${CC:-clang}
+      export CXX=${CXX:-clang++}
+  else
+      export CC=${CC:-gcc}
+      export CXX=${CXX:-g++}
   fi
+  BUILD_CCFLAGS="${BUILD_CCFLAGS} ${SVTAV1_CPU_FLAGS:-"-mtune=znver4 -mprefer-vector-width=256"}"
+  ENABLE_AVX512=${ENABLE_AVX512_WINDOWS:-"ON"}
 else
   AVX512_COUNT=$(cat /proc/cpuinfo | grep flags | grep avx512 | wc -l)
   if [ $AVX512_COUNT -eq 0 ]; then
@@ -47,12 +50,26 @@ else
   SVTAV1APPEXE="SvtAv1EncApp"
 fi
 
+if [ -z "${PGO_TRAIN_AVX512+x}" ]; then
+  PGO_TRAIN_AVX512="OFF"
+  if [ "${ENABLE_AVX512}" = "ON" ] && [ -r /proc/cpuinfo ] &&
+     awk 'BEGIN { IGNORECASE=1 } /^(flags|features)[[:space:]]*:.*avx512f/ { found=1; exit } END { exit !found }' /proc/cpuinfo; then
+    PGO_TRAIN_AVX512="ON"
+  fi
+fi
+echo PGO_TRAIN_AVX512=${PGO_TRAIN_AVX512}
+
 ENABLE_PGO=ON
-if [ $CXX == "clang++" ]; then
+IS_CLANG=OFF
+CXX_VERSION=$("$CXX" --version 2>/dev/null)
+if [[ "$CXX_VERSION" == *clang* ]]; then
+  IS_CLANG=ON
+fi
+if [ $IS_CLANG == "ON" ]; then
   ENABLE_PGO=ON
   # extend stack to 32MB to avoid stack overflow (MinGW/Windows only)
   if [ -n "$MSYSTEM" ]; then
-    BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--stack,33554432"
+    BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--icf=all -Wl,--stack,33554432"
   fi
 fi
 
@@ -61,7 +78,7 @@ if [ $ENABLE_PGO == "ON" ]; then
   export PROFILE_GEN_LD="-fprofile-generate"
   export PROFILE_USE_CC="-fprofile-use"
   export PROFILE_USE_LD="-fprofile-use"
-  if [ $CXX == "clang++" ]; then
+  if [ $IS_CLANG == "ON" ]; then
     export PROFILE_GEN_CC="-fprofile-generate -gline-tables-only"
     export PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
   else
@@ -124,51 +141,79 @@ if [ $ENABLE_PGO == "ON" ]; then
   make SvtAv1EncApp -j${NUMBER_OF_PROCESSORS}
 
   prof_files=()
+  prof_weights=()
   prof_idx=0
 
+  # The CI samples contain 60 frames. Concatenate them logically so PGO sees
+  # longer runs without requiring a content-specific input file.
+  PGO_YUV_REPEAT=${PGO_YUV_REPEAT:-10}
+  PGO_YUV_PATH=${YUV_PATH}
+  PGO_YUV_PATH_10=${YUV_PATH_10}
+  if [ ${PGO_YUV_REPEAT} -gt 1 ]; then
+    PGO_YUV_PATH=`pwd`/pgo_test_8.yuv
+    PGO_YUV_PATH_10=`pwd`/pgo_test_10.yuv
+    : > "${PGO_YUV_PATH}"
+    : > "${PGO_YUV_PATH_10}"
+    for ((repeat_idx = 0; repeat_idx < PGO_YUV_REPEAT; repeat_idx++)); do
+      cat "${YUV_PATH}" >> "${PGO_YUV_PATH}"
+      cat "${YUV_PATH_10}" >> "${PGO_YUV_PATH_10}"
+    done
+  fi
+
   function run_prof() {
-    ../../Bin/Release/${SVTAV1APPEXE} $@
+    local prof_weight=$1
+    shift
+    ../../Bin/Release/${SVTAV1APPEXE} "$@"
     prof_idx=$((prof_idx + 1))
     
-    if [ $CXX == "clang++" ]; then
+    if [ $IS_CLANG == "ON" ]; then
       for file in default_*_0.profraw; do
         new_file="${file%.profraw}_${prof_idx}.${file##*.}"
         mv "$file" "$new_file"
         echo ${new_file}
-        prof_files+=( ${new_file} )
+        prof_files+=( "${new_file}" )
+        prof_weights+=( "${prof_weight}" )
       done
     fi
   }
 
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  2 -n 30 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  4 -n 30 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  6 -n 30 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  8 -n 60 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset 12 -n 60 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  2 -n 30 --input-depth 10 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  4 -n 30 --input-depth 10 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  6 -n 30 --input-depth 10 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  8 -n 60 --input-depth 10 --asm avx2
-  run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset 12 -n 60 --input-depth 10 --asm avx2
-  if [ ${ENABLE_AVX512} = "ON" ]; then
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  2 -n 30 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  4 -n 30 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  6 -n 30 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset  8 -n 60 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH}    --preset 12 -n 60 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  2 -n 30 --input-depth 10 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  4 -n 30 --input-depth 10 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  6 -n 30 --input-depth 10 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset  8 -n 60 --input-depth 10 --asm avx512
-    run_prof -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i ${YUV_PATH_10} --preset 12 -n 60 --input-depth 10 --asm avx512
+  run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx2
+  run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx2
+  if [ "${ENABLE_AVX512}" = "ON" ] && [ "${PGO_TRAIN_AVX512}" = "ON" ]; then
+    run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx512
+    run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx512
   fi
 
-  if [ $CXX == "clang++" ]; then
+  if [ $IS_CLANG == "ON" ]; then
     echo ${prof_files[@]}
-    llvm-profdata merge -output=default.profdata "${prof_files[@]}"
+    prof_merge_args=()
+    for idx in "${!prof_files[@]}"; do
+      prof_merge_args+=( "-weighted-input=${prof_weights[$idx]},${prof_files[$idx]}" )
+    done
+    llvm-profdata merge -output=default.profdata "${prof_merge_args[@]}"
 
     PROFILE_USE_CC=${PROFILE_USE_CC}=`pwd`/default.profdata
     PROFILE_USE_LD=${PROFILE_USE_LD}=`pwd`/default.profdata
+  fi
+
+  if [ ${PGO_YUV_REPEAT} -gt 1 ]; then
+    rm -f "${PGO_YUV_PATH}" "${PGO_YUV_PATH_10}"
   fi
 
 fi
