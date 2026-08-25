@@ -21,7 +21,9 @@ fi
 #download
 mkdir -p $BUILD_DIR/src
 cd $BUILD_DIR/src
-git config --global core.autocrlf false
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=core.autocrlf
+export GIT_CONFIG_VALUE_0=false
 
 ENABLE_AVX512=${ENABLE_AVX512:-"ON"}
 TARGET_ARCH="x64"
@@ -39,7 +41,9 @@ if [ -n "$MSYSTEM" ]; then
       export CC=${CC:-gcc}
       export CXX=${CXX:-g++}
   fi
-  BUILD_CCFLAGS="${BUILD_CCFLAGS} ${SVTAV1_CPU_FLAGS:-"-mtune=znver4 -mprefer-vector-width=256"}"
+  # Keep distributed binaries CPU-neutral.  Architecture-specific tuning can
+  # still be tested explicitly through SVTAV1_CPU_FLAGS.
+  BUILD_CCFLAGS="${BUILD_CCFLAGS} ${SVTAV1_CPU_FLAGS:-}"
   ENABLE_AVX512=${ENABLE_AVX512_WINDOWS:-"ON"}
 else
   AVX512_COUNT=$(cat /proc/cpuinfo | grep flags | grep avx512 | wc -l)
@@ -177,23 +181,32 @@ if [ $ENABLE_PGO == "ON" ]; then
     fi
   }
 
-  run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx2
+  # Cover slow through fast presets and both bit depths.  The additional
+  # preset-3 and tiled film-grain runs improve common workloads without
+  # allowing one command line to dominate the distribution build profile.
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  3 -n 300 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx2
-  run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 32 --enable-mfmv 1 --film-grain 10 --scd 1 --tile-rows 2 --tile-columns 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 4 -n 180 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx2
+  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  3 -n 300 --input-depth 10 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx2
   run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx2
   if [ "${ENABLE_AVX512}" = "ON" ] && [ "${PGO_TRAIN_AVX512}" = "ON" ]; then
-    run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  3 -n 300 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx512
-    run_prof 4 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 32 --enable-mfmv 1 --film-grain 10 --scd 1 --tile-rows 2 --tile-columns 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 4 -n 180 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx512
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  3 -n 300 --input-depth 10 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx512
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx512
