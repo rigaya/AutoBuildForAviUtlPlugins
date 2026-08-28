@@ -224,7 +224,8 @@ if [ $ENABLE_PGO == "ON" ]; then
     for idx in "${!prof_files[@]}"; do
       prof_merge_args+=( "-weighted-input=${prof_weights[$idx]},${prof_files[$idx]}" )
     done
-    llvm-profdata merge -output=default.profdata "${prof_merge_args[@]}"
+    llvm-profdata merge --sparse -output=default.profdata "${prof_merge_args[@]}"
+    llvm-profdata show --all-functions --counts default.profdata
 
     PROFILE_USE_CC=${PROFILE_USE_CC}=`pwd`/default.profdata
     PROFILE_USE_LD=${PROFILE_USE_LD}=`pwd`/default.profdata
