@@ -3,7 +3,7 @@
 #pacman -S base-devel mingw-w64-i686-toolchain mingw-w64-x86_64-toolchain
 #pacman -S p7zip git nasm
 set -e
-SCRIPT_DIR=`pwd`
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BUILD_DIR=${SCRIPT_DIR}/build_x262
 LSMASH_CONFIGURE_PATCH="${SCRIPT_DIR}/patch/lsmash_configure.diff"
 X262_REV=${X262_REV:-}
