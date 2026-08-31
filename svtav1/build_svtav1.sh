@@ -1,5 +1,8 @@
 #!/bin/bash
 # pacman -S mingw-w64-clang-x86_64-toolchain clang64/mingw-w64-clang-x86_64-cmake
+set -e
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 BUILD_DIR=`pwd`/build_svtav1
 BUILD_CCFLAGS=${BUILD_CCFLAGS:-"-Ofast -ffast-math -fomit-frame-pointer -flto"}
 BUILD_LDFLAGS=${BUILD_LDFLAGS:-"-static -static-libgcc -flto -Wl,--gc-sections -Wl,--strip-all"}
@@ -46,6 +49,8 @@ if [ -n "$MSYSTEM" ]; then
   BUILD_CCFLAGS="${BUILD_CCFLAGS} ${SVTAV1_CPU_FLAGS:-}"
   ENABLE_AVX512=${ENABLE_AVX512_WINDOWS:-"ON"}
 else
+  export CC=${CC:-clang}
+  export CXX=${CXX:-clang++}
   AVX512_COUNT=$(cat /proc/cpuinfo | grep flags | grep avx512 | wc -l)
   if [ $AVX512_COUNT -eq 0 ]; then
     ENABLE_AVX512="OFF"
@@ -71,6 +76,15 @@ if [[ "$CXX_VERSION" == *clang* ]]; then
 fi
 if [ $IS_CLANG == "ON" ]; then
   ENABLE_PGO=ON
+  if [ -z "${LLVM_PROFDATA:-}" ]; then
+    CLANG_VERSION=$($CC -dumpversion | cut -d. -f1)
+    LLVM_PROFDATA=$(command -v llvm-profdata || command -v llvm-profdata-${CLANG_VERSION})
+  fi
+  if [ -z "${LLVM_PROFDATA}" ]; then
+    echo "clang ${CLANG_VERSION} に対応する llvm-profdata が見つかりません。"
+    exit 1
+  fi
+  echo LLVM_PROFDATA=${LLVM_PROFDATA}
   # extend stack to 32MB to avoid stack overflow (MinGW/Windows only)
   if [ -n "$MSYSTEM" ]; then
     BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--icf=all -Wl,--stack,33554432"
@@ -142,20 +156,43 @@ if [ $ENABLE_PGO == "ON" ]; then
     -DCMAKE_EXE_LINKER_FLAGS="${BUILD_LDFLAGS} ${PROFILE_GEN_LD}" \
     ../..
 
-  make SvtAv1EncApp -j${NUMBER_OF_PROCESSORS}
+  make SvtAv1EncApp -j${MAKE_PROCESS}
 
   prof_files=()
   prof_weights=()
   prof_idx=0
+  # 先頭14本は通常の8/10bit CRF経路。特殊オプションで分岐確率を薄めないよう重くする。
+  PGO_STANDARD_PROFILE_COUNT=14
+  PGO_STANDARD_WEIGHT=${PGO_STANDARD_WEIGHT:-3}
 
-  # The CI samples contain 60 frames. Concatenate them logically so PGO sees
-  # longer runs without requiring a content-specific input file.
-  PGO_YUV_REPEAT=${PGO_YUV_REPEAT:-10}
+  # 1080pのCI素材は30フレーム。連結して長いGOPと時間方向の処理を学習する。
+  PGO_MAIN_WIDTH=1920
+  PGO_MAIN_HEIGHT=1080
+  PGO_YUV_REPEAT=${PGO_YUV_REPEAT:-20}
   PGO_YUV_PATH=${YUV_PATH}
   PGO_YUV_PATH_10=${YUV_PATH_10}
+  PGO_720_PATH=${YUV_PATH_720:-}
+  PGO_720_PATH_10=${YUV_PATH_720_10:-}
+  PGO_YUV_GENERATED=OFF
+  function cleanup_pgo_yuv() {
+    if [ "${PGO_YUV_GENERATED}" = "ON" ]; then
+      rm -f "${PGO_YUV_PATH}" "${PGO_YUV_PATH_10}"
+    fi
+  }
+  trap cleanup_pgo_yuv EXIT
+  if [ ! -r "${PGO_YUV_PATH}" ] || [ ! -r "${PGO_YUV_PATH_10}" ]; then
+    echo "PGO用1080p素材を読み込めません。YUV_PATHとYUV_PATH_10を確認してください。"
+    exit 1
+  fi
+  if { [ -n "${PGO_720_PATH}" ] && [ ! -r "${PGO_720_PATH}" ]; } ||
+     { [ -n "${PGO_720_PATH_10}" ] && [ ! -r "${PGO_720_PATH_10}" ]; }; then
+    echo "PGO用720p素材を読み込めません。YUV_PATH_720とYUV_PATH_720_10を確認してください。"
+    exit 1
+  fi
   if [ ${PGO_YUV_REPEAT} -gt 1 ]; then
     PGO_YUV_PATH=`pwd`/pgo_test_8.yuv
     PGO_YUV_PATH_10=`pwd`/pgo_test_10.yuv
+    PGO_YUV_GENERATED=ON
     : > "${PGO_YUV_PATH}"
     : > "${PGO_YUV_PATH_10}"
     for ((repeat_idx = 0; repeat_idx < PGO_YUV_REPEAT; repeat_idx++)); do
@@ -184,57 +221,86 @@ if [ $ENABLE_PGO == "ON" ]; then
   # Cover slow through fast presets and both bit depths.  The additional
   # preset-3 and tiled film-grain runs improve common workloads without
   # allowing one command line to dominate the distribution build profile.
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  3 -n 300 --asm avx2 
---enable-variance-boost 1 --qp-scale-compress-strength 2 --enable-tf 2 --ac-bias 1.0 --luminance-qp-bias 10
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  5 -n 300 --asm avx2 
---film-grain 10 --enable-overlays 1
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  3 -n 300 --input-depth 10 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx2
-  run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  3 -n 300 --asm avx2 \
+    --enable-variance-boost 1 --qp-scale-compress-strength 2 --enable-tf 2 --ac-bias 1.0 --luminance-qp-bias 10
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  5 -n 300 --asm avx2 \
+    --film-grain 10 --film-grain-denoise 1 --enable-overlays 1 --tile-rows 1 --tile-columns 1
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  3 -n 300 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  5 -n 300 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx2
+
+  # 720pは解像度クラス固有の分岐を残すため、8/10bitの低速・高速presetを短く実行する。
+  if [ -n "${PGO_720_PATH}" ] && [ -n "${PGO_720_PATH_10}" ]; then
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 -b /dev/null -i "${PGO_720_PATH}"    --preset 4 -n 30 --asm avx2
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 -b /dev/null -i "${PGO_720_PATH}"    --preset 8 -n 60 --asm avx2
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 -b /dev/null -i "${PGO_720_PATH_10}" --preset 4 -n 30 --input-depth 10 --asm avx2
+    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 -b /dev/null -i "${PGO_720_PATH_10}" --preset 8 -n 60 --input-depth 10 --asm avx2
+  fi
+
+  # CRF以外の主要な制御経路は短い実行で学習し、通常経路のカウンタを過度に薄めない。
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 1 --tbr 2500 --keyint 120 --pred-struct 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 120 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 2 --tbr 2500 --keyint 120 --rtc 1 --pred-struct 1 --hierarchical-levels 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 120 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --pred-struct 0 --keyint 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --tune 5 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --tune 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --superres-mode 1 --superres-denom 12 --superres-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 0 --qp 30 --aq-mode 1 --enable-qm 1 --qm-min 4 --qm-max 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --resize-mode 1 --resize-denom 12 --resize-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --superres-mode 1 --superres-denom 12 --superres-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 6 -n 60 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --resize-mode 1 --resize-denom 16 --resize-kf-denom 16 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 6 -n 60 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --pred-struct 0 --keyint 1 --scm 1 --enable-intrabc 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --fast-decode 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --tune 0 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --passes 2 --rc 1 --tbr 2500 --keyint 120 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 60 --asm avx2
   if [ "${ENABLE_AVX512}" = "ON" ] && [ "${PGO_TRAIN_AVX512}" = "ON" ]; then
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  3 -n 300 --asm avx512 
---enable-variance-boost 1 --qp-scale-compress-strength 2 --enable-tf 2 --ac-bias 1.0 --luminance-qp-bias 10
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  5 -n 300 --asm avx512 
---film-grain 10 --enable-overlays 1
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  3 -n 300 --input-depth 10 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  5 -n 300 --input-depth 10 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx512
-    run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  2 -n 30 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  3 -n 300 --asm avx512 \
+      --enable-variance-boost 1 --qp-scale-compress-strength 2 --enable-tf 2 --ac-bias 1.0 --luminance-qp-bias 10
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  4 -n 300 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  5 -n 300 --asm avx512 \
+      --film-grain 10 --enable-overlays 1
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  6 -n 300 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset  8 -n 600 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 10 -n 600 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  2 -n 30 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  3 -n 300 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  4 -n 300 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  5 -n 300 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  6 -n 300 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx512
+    run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx512
   fi
 
   if [ $IS_CLANG == "ON" ]; then
     echo ${prof_files[@]}
     prof_merge_args=()
     for idx in "${!prof_files[@]}"; do
-      prof_merge_args+=( "-weighted-input=${prof_weights[$idx]},${prof_files[$idx]}" )
+      prof_weight=${prof_weights[$idx]}
+      if [ ${idx} -lt ${PGO_STANDARD_PROFILE_COUNT} ]; then
+        prof_weight=$((prof_weight * PGO_STANDARD_WEIGHT))
+      fi
+      prof_merge_args+=( "-weighted-input=${prof_weight},${prof_files[$idx]}" )
     done
-    llvm-profdata merge --sparse -output=default.profdata "${prof_merge_args[@]}"
-    llvm-profdata show --all-functions --counts default.profdata
+    "${LLVM_PROFDATA}" merge --sparse -output=default.profdata "${prof_merge_args[@]}"
+    "${LLVM_PROFDATA}" merge -output=default.full.profdata "${prof_merge_args[@]}"
+    "${LLVM_PROFDATA}" show --all-functions --counts default.profdata
+    bash "${SCRIPT_DIR}/analyze_svtav1_profdata.sh" default.full.profdata
 
     PROFILE_USE_CC=${PROFILE_USE_CC}=`pwd`/default.profdata
     PROFILE_USE_LD=${PROFILE_USE_LD}=`pwd`/default.profdata
   fi
 
-  if [ ${PGO_YUV_REPEAT} -gt 1 ]; then
-    rm -f "${PGO_YUV_PATH}" "${PGO_YUV_PATH_10}"
-  fi
-
+  cleanup_pgo_yuv
+  trap - EXIT
 fi
 
 cmake -G "${CMAKE_TARGET}" \
@@ -252,5 +318,5 @@ cmake -G "${CMAKE_TARGET}" \
   -DCMAKE_EXE_LINKER_FLAGS="${BUILD_LDFLAGS} ${PROFILE_USE_LD}" \
   ../..
 
-make SvtAv1EncApp -j${NUMBER_OF_PROCESSORS}
+make SvtAv1EncApp -j${MAKE_PROCESS}
 make SvtAv1EncApp install

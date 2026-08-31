@@ -351,18 +351,25 @@ jobs:
       shell: msys2 {0}
       working-directory: svtav1
       run: |
+        curl --fail --location --retry 3 -o test_1080_8bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_8bit.7z
+        curl --fail --location --retry 3 -o test_1080_10bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_10bit.7z
         curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
         curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
-        7z x test_8.7z
-        7z x test_10.7z
+        mkdir -p test_1080 test_720
+        7z x test_1080_8bit.7z -otest_1080
+        7z x test_1080_10bit.7z -otest_1080
+        7z x test_8.7z -otest_720
+        7z x test_10.7z -otest_720
         
     - name: Build svtav1
       shell: msys2 {0}
       working-directory: svtav1
       run: |
         chmod +x build_svtav1.sh
-        export YUV_PATH="$(pwd)/test.yuv"
-        export YUV_PATH_10="$(pwd)/test_10.yuv"
+        export YUV_PATH="$(pwd)/test_1080/test_1080_8bit.yuv"
+        export YUV_PATH_10="$(pwd)/test_1080/test_1080_10bit.yuv"
+        export YUV_PATH_720="$(pwd)/test_720/test.yuv"
+        export YUV_PATH_720_10="$(pwd)/test_720/test_10.yuv"
         if [ "${{ matrix.compiler }}" = "gcc" ]; then
           export CC=gcc
           export CXX=g++
@@ -402,7 +409,7 @@ jobs:
         if [ -f "$EXE_PATH" ]; then
           echo "Running SVT-AV1 test with fast preset..."
           # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
-          "$EXE_PATH" -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "$(pwd)/test.yuv" --preset 8 --frames 30
+          "$EXE_PATH" -w 1920 -h 1080 --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "$(pwd)/test_1080/test_1080_8bit.yuv" --preset 8 --frames 30
           if [ $? -eq 0 ]; then
             echo "SVT-AV1 test completed successfully!"
           else
@@ -631,17 +638,24 @@ jobs:
     - name: Extract test data
       working-directory: svtav1
       run: |
+        curl --fail --location --retry 3 -o test_1080_8bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_8bit.7z
+        curl --fail --location --retry 3 -o test_1080_10bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_10bit.7z
         curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
         curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
-        7z x test_8.7z
-        7z x test_10.7z
+        mkdir -p test_1080 test_720
+        7z x test_1080_8bit.7z -otest_1080
+        7z x test_1080_10bit.7z -otest_1080
+        7z x test_8.7z -otest_720
+        7z x test_10.7z -otest_720
 
     - name: Build svtav1 (Linux)
       working-directory: svtav1
       run: |
         chmod +x build_svtav1.sh
-        export YUV_PATH="$(pwd)/test.yuv"
-        export YUV_PATH_10="$(pwd)/test_10.yuv"
+        export YUV_PATH="$(pwd)/test_1080/test_1080_8bit.yuv"
+        export YUV_PATH_10="$(pwd)/test_1080/test_1080_10bit.yuv"
+        export YUV_PATH_720="$(pwd)/test_720/test.yuv"
+        export YUV_PATH_720_10="$(pwd)/test_720/test_10.yuv"
         export INSTALL_DIR="$(pwd)/install"
         if [ "${{ matrix.compiler }}" = "gcc" ]; then
           CC=gcc CXX=g++ ./build_svtav1.sh
@@ -675,7 +689,7 @@ jobs:
         if [ -f "$EXE_PATH" ]; then
           echo "Running SVT-AV1 test with fast preset..."
           # 高速プリセットでテスト実行（プロファイリング用のコマンドから選択）
-          "$EXE_PATH" -w 1280 -h 720 --crf 30 --scd 1 --fps-num 30 --fps-denom 1 -b /dev/null -i "$(pwd)/test.yuv" --preset 8 --frames 30
+          "$EXE_PATH" -w 1920 -h 1080 --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "$(pwd)/test_1080/test_1080_8bit.yuv" --preset 8 --frames 30
           if [ $? -eq 0 ]; then
             echo "SVT-AV1 test completed successfully!"
           else
