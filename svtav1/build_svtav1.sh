@@ -238,6 +238,11 @@ if [ $ENABLE_PGO == "ON" ]; then
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset  8 -n 600 --input-depth 10 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 10 -n 600 --input-depth 10 --asm avx2
 
+  # preset 0/1固有のOBMC・inter-intra探索を短尺で学習する。preset 1はpreset 0で通らないOBMC制御も補う。
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 0 -n 30 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}"    --preset 1 -n 30 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --scd 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 0 -n 30 --input-depth 10 --asm avx2
+
   # 720pは解像度クラス固有の分岐を残すため、8/10bitの低速・高速presetを短く実行する。
   if [ -n "${PGO_720_PATH}" ] && [ -n "${PGO_720_PATH_10}" ]; then
     run_prof 1 -w 1280 -h 720 --crf 30 --scd 1 -b /dev/null -i "${PGO_720_PATH}"    --preset 4 -n 30 --asm avx2
@@ -249,14 +254,20 @@ if [ $ENABLE_PGO == "ON" ]; then
   # CRF以外の主要な制御経路は短い実行で学習し、通常経路のカウンタを過度に薄めない。
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 1 --tbr 2500 --keyint 120 --pred-struct 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 120 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 2 --tbr 2500 --keyint 120 --rtc 1 --pred-struct 1 --hierarchical-levels 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 120 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 2 --tbr 2500 --keyint 120 --rtc 0 --pred-struct 1 --recode-loop 3 --undershoot-pct 5 --overshoot-pct 5 --buf-sz 1000 --buf-initial-sz 600 --buf-optimal-sz 600 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 120 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --pred-struct 0 --keyint 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --tune 5 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --tune 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --superres-mode 1 --superres-denom 12 --superres-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --superres-mode 3 --superres-qthres 0 --superres-kf-qthres 0 --scm 0 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 0 --qp 30 --aq-mode 1 --enable-qm 1 --qm-min 4 --qm-max 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --rc 0 --qp 30 --aq-mode 1 --enable-qm 1 --qm-min 4 --qm-max 12 --chroma-qm-min 4 --chroma-qm-max 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 6 -n 60 --input-depth 10 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --resize-mode 1 --resize-denom 12 --resize-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --resize-mode 1 --resize-denom 16 --resize-kf-denom 16 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --superres-mode 1 --superres-denom 12 --superres-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 6 -n 60 --input-depth 10 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --resize-mode 1 --resize-denom 16 --resize-kf-denom 16 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 6 -n 60 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --resize-mode 1 --resize-denom 12 --resize-kf-denom 12 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH_10}" --preset 6 -n 60 --input-depth 10 --asm avx2
+  run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --film-grain 10 --film-grain-denoise 1 --adaptive-film-grain 0 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 5 -n 120 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --pred-struct 0 --keyint 1 --scm 1 --enable-intrabc 1 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --fast-decode 2 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 8 -n 60 --asm avx2
   run_prof 1 -w "${PGO_MAIN_WIDTH}" -h "${PGO_MAIN_HEIGHT}" --crf 30 --tune 0 --fps-num 30000 --fps-denom 1001 -b /dev/null -i "${PGO_YUV_PATH}" --preset 6 -n 60 --asm avx2

@@ -77,6 +77,34 @@ function show_summary() {
   ' "${tsv_path}"
 }
 
+function show_delta_summary() {
+  local current_tsv=$1
+  local baseline_tsv=$2
+  local label=$3
+  local pattern=$4
+
+  awk -F '\t' -v label="${label}" -v pattern="${pattern}" '
+    NR == FNR {
+      baseline_executed[$1] = $2
+      baseline_counters[$1] = $3
+      next
+    }
+    pattern == "" || tolower($1) ~ pattern {
+      current_executed += ($2 > 0)
+      old_executed = (($1 in baseline_executed) ? baseline_executed[$1] : 0)
+      old_counters = (($1 in baseline_counters) ? baseline_counters[$1] : 0)
+      baseline_executed_total += (old_executed > 0)
+      newly_executed += ($2 > 0 && old_executed == 0)
+      lost_executed += ($2 == 0 && old_executed > 0)
+      counter_delta += $3 - old_counters
+    }
+    END {
+      printf "%-20s 関数 %+5d（新規 %4d、消失 %4d）  内部カウンタ %+7d\n", \
+             label, current_executed - baseline_executed_total, newly_executed, lost_executed, counter_delta
+    }
+  ' "${baseline_tsv}" "${current_tsv}"
+}
+
 CURRENT_TSV=${TMP_DIR}/current.tsv
 profile_to_tsv "${PROFILE}" "${CURRENT_TSV}"
 
@@ -107,6 +135,43 @@ awk -F '\t' '
 if [ -n "${BASELINE_PROFILE}" ]; then
   BASELINE_TSV=${TMP_DIR}/baseline.tsv
   profile_to_tsv "${BASELINE_PROFILE}" "${BASELINE_TSV}"
+
+  echo
+  echo "基準からのカバレッジ差分"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "全体" ""
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "AVX2" "avx2"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "SAD・variance" "sad|variance"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "transform・quantize" "txfm|transform|quant"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "convolve" "convolve"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "intra" "intra"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "CDEF・restoration" "cdef|restoration|wiener|selfguided"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "temporal・noise" "temporal|noise"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "tile・entropy" "tile|entropy_coding|ec_process"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "resize・superres" "resize|superres|upscale|down2"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "palette・screen" "palette|intrabc"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "rate control" "rate_control|[/;]rc_|_rc_|twopass|rate_allocation"
+  show_delta_summary "${CURRENT_TSV}" "${BASELINE_TSV}" "warp" "warp"
+
+  awk -F '\t' '
+    NR == FNR {
+      baseline_executed[$1] = $2
+      baseline_counters[$1] = $3
+      next
+    }
+    {
+      old_executed = (($1 in baseline_executed) ? baseline_executed[$1] : 0)
+      old_counters = (($1 in baseline_counters) ? baseline_counters[$1] : 0)
+      is_avx2 = (tolower($1) ~ /\/asm_avx2\/|_avx2($|\.)/)
+      newly_executed += ($2 > 0 && old_executed == 0)
+      newly_avx2 += ($2 > 0 && old_executed == 0 && is_avx2)
+      new_counters += $3 - old_counters
+      new_avx2_counters += is_avx2 ? $3 - old_counters : 0
+    }
+    END {
+      printf "評価\t新規関数=%d\t新規AVX2関数=%d\t新規内部カウンタ=%d\t新規AVX2内部カウンタ=%d\n", \
+             newly_executed, newly_avx2, new_counters, new_avx2_counters
+    }
+  ' "${BASELINE_TSV}" "${CURRENT_TSV}"
 
   echo
   echo "基準から新たに実行された関数"
