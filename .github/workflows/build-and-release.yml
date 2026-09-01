@@ -351,10 +351,10 @@ jobs:
       shell: msys2 {0}
       working-directory: svtav1
       run: |
-        curl --fail --location --retry 3 -o test_1080_8bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_8bit.7z
-        curl --fail --location --retry 3 -o test_1080_10bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_10bit.7z
-        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
-        curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
+        curl --fail --location --retry 3 -o test_1080_8bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20260812/test_1080_8bit.7z
+        curl --fail --location --retry 3 -o test_1080_10bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20260812/test_1080_10bit.7z
+        curl --fail --location --retry 3 -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        curl --fail --location --retry 3 -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
         mkdir -p test_1080 test_720
         7z x test_1080_8bit.7z -otest_1080
         7z x test_1080_10bit.7z -otest_1080
@@ -638,10 +638,10 @@ jobs:
     - name: Extract test data
       working-directory: svtav1
       run: |
-        curl --fail --location --retry 3 -o test_1080_8bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_8bit.7z
-        curl --fail --location --retry 3 -o test_1080_10bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_1080_10bit.7z
-        curl -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
-        curl -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
+        curl --fail --location --retry 3 -o test_1080_8bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20260812/test_1080_8bit.7z
+        curl --fail --location --retry 3 -o test_1080_10bit.7z https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20260812/test_1080_10bit.7z
+        curl --fail --location --retry 3 -o test_8.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_8.7z
+        curl --fail --location --retry 3 -o test_10.7z -L https://github.com/rigaya/ffmpeg_dlls_for_hwenc/releases/download/20250825/test_10.7z
         mkdir -p test_1080 test_720
         7z x test_1080_8bit.7z -otest_1080
         7z x test_1080_10bit.7z -otest_1080
