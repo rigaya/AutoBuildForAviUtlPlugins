@@ -164,6 +164,7 @@ jobs:
       run: |
         chmod +x build_x264.sh
         export YUV_PATH="$(pwd)/test_1280x720.yuv"
+        export X264_REV="${{ needs.check-updates.outputs.x264_sha }}"
         ./build_x264.sh
         
     - name: Get x264 revision number and rename executable
@@ -261,6 +262,7 @@ jobs:
       run: |
         chmod +x build_x265.sh
         export YUV_PATH="$(pwd)/test.yuv"
+        export X265_REV="${{ needs.check-updates.outputs.x265_sha }}"
         ./build_x265.sh
         
     - name: Get x265 version and rename executable
@@ -370,6 +372,7 @@ jobs:
         export YUV_PATH_10="$(pwd)/test_1080/test_1080_10bit.yuv"
         export YUV_PATH_720="$(pwd)/test_720/test.yuv"
         export YUV_PATH_720_10="$(pwd)/test_720/test_10.yuv"
+        export SVTAV1_REV="${{ needs.check-updates.outputs.svtav1_sha }}"
         if [ "${{ matrix.compiler }}" = "gcc" ]; then
           export CC=gcc
           export CXX=g++
@@ -468,6 +471,7 @@ jobs:
         chmod +x build_x264.sh
         export YUV_PATH="$(pwd)/test_1280x720.yuv"
         export INSTALL_DIR="$(pwd)/install"
+        export X264_REV="${{ needs.check-updates.outputs.x264_sha }}"
         CC=gcc CXX=g++ ./build_x264.sh
 
     - name: Get x264 revision and create tar.xz
@@ -555,6 +559,7 @@ jobs:
         chmod +x build_x265.sh
         export YUV_PATH="$(pwd)/test.yuv"
         export INSTALL_DIR="$(pwd)/install"
+        export X265_REV="${{ needs.check-updates.outputs.x265_sha }}"
         CC=clang CXX=clang++ ./build_x265.sh
 
     - name: Get x265 version and create tar.xz
@@ -657,6 +662,7 @@ jobs:
         export YUV_PATH_720="$(pwd)/test_720/test.yuv"
         export YUV_PATH_720_10="$(pwd)/test_720/test_10.yuv"
         export INSTALL_DIR="$(pwd)/install"
+        export SVTAV1_REV="${{ needs.check-updates.outputs.svtav1_sha }}"
         if [ "${{ matrix.compiler }}" = "gcc" ]; then
           CC=gcc CXX=g++ ./build_svtav1.sh
         else
@@ -840,8 +846,56 @@ jobs:
         if-no-files-found: error
         retention-days: 30
 
+  prepare-source-archives:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: x264
+            project_name: x264
+            repository_url: https://code.videolan.org/videolan/x264.git
+            revision: ${{ needs.check-updates.outputs.x264_sha }}
+          - id: x265
+            project_name: x265
+            repository_url: https://github.com/Multicorewareinc/x265.git
+            revision: ${{ needs.check-updates.outputs.x265_sha }}
+          - id: svtav1
+            project_name: SVT-AV1
+            repository_url: https://gitlab.com/AOMediaCodec/SVT-AV1.git
+            revision: ${{ needs.check-updates.outputs.svtav1_sha }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install archive tool
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y p7zip-full
+
+    - name: Reuse or create source archive
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        .github/scripts/prepare-source-archive.sh \
+          "${{ matrix.project_name }}" \
+          "${{ matrix.repository_url }}" \
+          "${{ matrix.revision }}" \
+          source_archives
+
+    - name: Upload source archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: source-${{ matrix.id }}
+        path: source_archives/*.7z
+        if-no-files-found: error
+        retention-days: 30
+
   create-release:
-    needs: [check-updates, build-x264, build-x265, build-svtav1, build-x264-linux, build-x265-linux, build-svtav1-linux, download-existing-x264, download-existing-x265, download-existing-svtav1, download-existing-x264-linux, download-existing-x265-linux, download-existing-svtav1-linux]
+    needs: [check-updates, build-x264, build-x265, build-svtav1, build-x264-linux, build-x265-linux, build-svtav1-linux, download-existing-x264, download-existing-x265, download-existing-svtav1, download-existing-x264-linux, download-existing-x265-linux, download-existing-svtav1-linux, prepare-source-archives]
     # skipped は許容し、failure/cancelled のときはリリースしない
     if: |
       always()
@@ -883,6 +937,8 @@ jobs:
         find artifacts/ -type f -name "*.exe" | sort
         echo "Downloaded artifacts (tar.xz):"
         find artifacts/ -type f -name "*.tar.xz" | sort
+        echo "Downloaded artifacts (source 7z):"
+        find artifacts/ -type f -name "*.7z" | sort
         
     - name: Create zip files from executables
       run: |
@@ -897,6 +953,9 @@ jobs:
         done
         # 既にtar.xz化されたLinux成果物はそのまま収集
         find artifacts/ -type f -name "*.tar.xz" -exec cp {} zipped_artifacts/ \;
+
+        # ソースAssetは7z形式のまま収集
+        find artifacts/ -type f -name "*.7z" -exec cp {} zipped_artifacts/ \;
         
         # build_rev.txtもzipped_artifactsディレクトリにコピー
         cp build_rev.txt zipped_artifacts/
@@ -974,6 +1033,7 @@ jobs:
         files: |
           zipped_artifacts/*.zip
           zipped_artifacts/*.tar.xz
+          zipped_artifacts/*.7z
           zipped_artifacts/build_rev.txt
         draft: false
         prerelease: false
@@ -994,6 +1054,9 @@ jobs:
           echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
         done
         find zipped_artifacts/ -type f -name "*.tar.xz" | while read file; do
+          echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
+        done
+        find zipped_artifacts/ -type f -name "*.7z" | while read file; do
           echo "- $(basename "$file")" >> $GITHUB_STEP_SUMMARY
         done
         echo "- build_rev.txt" >> $GITHUB_STEP_SUMMARY
