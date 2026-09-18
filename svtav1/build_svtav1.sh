@@ -87,7 +87,12 @@ if [ $IS_CLANG == "ON" ]; then
   if [ -n "$MSYSTEM" ]; then
     BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--icf=all -Wl,--lto-O3 -Wl,--stack,33554432"
   else
-    BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,--lto-O3"
+    # 下記の -mllvm オプションは GNU ld では扱えないため、Linux でも lld を明示する。
+    if ! command -v ld.lld >/dev/null 2>&1; then
+      echo "Clang のリンクに必要な ld.lld が見つかりません。lld をインストールしてください。"
+      exit 1
+    fi
+    BUILD_LDFLAGS="${BUILD_LDFLAGS} -fuse-ld=lld -Wl,--lto-O3"
   fi
   if [ "${SVTAV1_KEEP_CMOV:-ON}" = "ON" ]; then
     BUILD_LDFLAGS="${BUILD_LDFLAGS} -Wl,-mllvm,-x86-cmov-converter=false"
