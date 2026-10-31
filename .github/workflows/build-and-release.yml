@@ -145,9 +145,11 @@ jobs:
           git
           p7zip
           nasm
+        # mingw-w64-i686-make は 2026-10-22 に MSYS2 から削除された。
+        # ビルドは base-devel の MSYS make を使う。
         pacboy: >-
           ${{ matrix.msystem == 'CLANG64' && 'clang:p lld:p llvm:p' || '' }}
-          make:p
+          ${{ matrix.msystem != 'MINGW32' && 'make:p' || '' }}
           pkgconf:p
           
     - name: Extract test data
@@ -243,9 +245,11 @@ jobs:
           git
           p7zip
           nasm
+        # mingw-w64-i686-make は 2026-10-22 に MSYS2 から削除された。
+        # ビルドは base-devel の MSYS make を使う。
         pacboy: >-
           ${{ matrix.msystem == 'CLANG64' && 'clang:p lld:p llvm:p' || '' }}
-          make:p
+          ${{ matrix.msystem != 'MINGW32' && 'make:p' || '' }}
           pkgconf:p
           cmake:p
           
