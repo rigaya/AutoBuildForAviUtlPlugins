@@ -10,7 +10,7 @@ on:
 
 jobs:
   check-updates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       x264_sha: ${{ steps.get_sha.outputs.x264_sha }}
       x265_sha: ${{ steps.get_sha.outputs.x265_sha }}
@@ -438,7 +438,7 @@ jobs:
   build-x264-linux:
     needs: check-updates
     if: needs.check-updates.outputs.x264_needs_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -527,7 +527,7 @@ jobs:
   build-x265-linux:
     needs: check-updates
     if: needs.check-updates.outputs.x265_needs_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -613,7 +613,7 @@ jobs:
   build-svtav1-linux:
     needs: check-updates
     if: needs.check-updates.outputs.svtav1_needs_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
@@ -722,7 +722,7 @@ jobs:
   download-existing-x264:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x264_needs_build == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -744,7 +744,7 @@ jobs:
   download-existing-x265:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x265_needs_build == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -766,7 +766,7 @@ jobs:
   download-existing-svtav1:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.svtav1_needs_build == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -788,7 +788,7 @@ jobs:
   download-existing-x264-linux:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x264_needs_build == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -810,7 +810,7 @@ jobs:
   download-existing-x265-linux:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.x265_needs_build == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -832,7 +832,7 @@ jobs:
   download-existing-svtav1-linux:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true' && needs.check-updates.outputs.svtav1_needs_build == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -854,7 +854,7 @@ jobs:
   prepare-source-archives:
     needs: check-updates
     if: needs.check-updates.outputs.has_updates == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -908,7 +908,7 @@ jobs:
       && needs.check-updates.outputs.has_updates == 'true'
       && !contains(needs.*.result, 'failure')
       && !contains(needs.*.result, 'cancelled')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     steps:
     - name: Checkout repository
