@@ -22,7 +22,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       
     - name: Get current SHA for all encoders
       id: get_sha
@@ -132,7 +132,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
@@ -209,7 +209,7 @@ jobs:
         fi
         
     - name: Upload x264 artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}
         path: x264/build_x264/${{ matrix.arch }}/x264/x264_${{ steps.get_rev.outputs.x264_rev }}_${{ matrix.arch }}.exe
@@ -232,7 +232,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
@@ -311,7 +311,7 @@ jobs:
         fi
         
     - name: Upload x265 artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}
         path: x265/build_x265/${{ matrix.arch }}/x265/build/msys/8bit/x265_${{ steps.get_version.outputs.x265_ver }}_${{ matrix.arch }}.exe
@@ -332,7 +332,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
@@ -429,7 +429,7 @@ jobs:
         fi
         
     - name: Upload SVT-AV1 artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}_${{ matrix.compiler }}
         path: svtav1/build_svtav1/${{ matrix.arch }}/SVT-AV1/Bin/Release/SvtAv1EncApp_${{ steps.get_version.outputs.svtav1_rev }}_${{ matrix.arch }}_${{ matrix.compiler }}.exe
@@ -442,7 +442,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install build tools
       run: |
@@ -518,7 +518,7 @@ jobs:
         fi
 
     - name: Upload x264 linux artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: x264_${{ steps.get_rev_linux.outputs.x264_rev_linux }}_amd64_linux
         path: x264/x264_${{ steps.get_rev_linux.outputs.x264_rev_linux }}_amd64_linux.tar.xz
@@ -531,7 +531,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install build tools
       run: |
@@ -604,7 +604,7 @@ jobs:
         fi
 
     - name: Upload x265 linux artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: x265_${{ steps.get_version_linux.outputs.x265_ver_linux }}_amd64_linux
         path: x265/x265_${{ steps.get_version_linux.outputs.x265_ver_linux }}_amd64_linux.tar.xz
@@ -624,7 +624,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install build tools
       run: |
@@ -713,7 +713,7 @@ jobs:
         fi
 
     - name: Upload SVT-AV1 linux artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux_${{ matrix.compiler }}
         path: svtav1/SvtAv1EncApp_${{ steps.get_version_linux_svt.outputs.svtav1_rev_linux }}_amd64_linux_${{ matrix.compiler }}.tar.xz
@@ -726,7 +726,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download existing x264 files from recent releases
       env:
@@ -734,7 +734,7 @@ jobs:
       run: bash .github/scripts/download-release-assets.sh '^x264_.*\.zip$' x264_downloads --extract-exe
 
     - name: Upload x264 reused artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: reused-x264-executables
         path: x264_downloads/
@@ -748,7 +748,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download existing x265 files from recent releases
       env:
@@ -756,7 +756,7 @@ jobs:
       run: bash .github/scripts/download-release-assets.sh '^x265_.*\.zip$' x265_downloads --extract-exe
 
     - name: Upload x265 reused artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: reused-x265-executables
         path: x265_downloads/
@@ -770,7 +770,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download existing SVT-AV1 files from recent releases
       env:
@@ -778,7 +778,7 @@ jobs:
       run: bash .github/scripts/download-release-assets.sh '^SvtAv1EncApp_.*\.zip$' svtav1_downloads --extract-exe
 
     - name: Upload SVT-AV1 reused artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: reused-svtav1-executables
         path: svtav1_downloads/
@@ -792,7 +792,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download existing x264 linux files from recent releases
       env:
@@ -800,7 +800,7 @@ jobs:
       run: bash .github/scripts/download-release-assets.sh '^x264_.*_amd64_linux\.tar\.xz$' x264_linux_downloads
 
     - name: Upload x264 linux reused artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: reused-x264-linux
         path: x264_linux_downloads/
@@ -814,7 +814,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download existing x265 linux files from recent releases
       env:
@@ -822,7 +822,7 @@ jobs:
       run: bash .github/scripts/download-release-assets.sh '^x265_.*_amd64_linux\.tar\.xz$' x265_linux_downloads
 
     - name: Upload x265 linux reused artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: reused-x265-linux
         path: x265_linux_downloads/
@@ -836,7 +836,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download existing SVT-AV1 linux files from recent releases
       env:
@@ -844,7 +844,7 @@ jobs:
       run: bash .github/scripts/download-release-assets.sh '^SvtAv1EncApp_.*_amd64_linux_(clang|gcc)\.tar\.xz$' svtav1_linux_downloads
 
     - name: Upload SVT-AV1 linux reused artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: reused-svtav1-linux
         path: svtav1_linux_downloads/
@@ -874,7 +874,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install archive tool
       run: |
@@ -892,7 +892,7 @@ jobs:
           source_archives
 
     - name: Upload source archive
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: source-${{ matrix.id }}
         path: source_archives/*.7z
@@ -912,7 +912,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       
     - name: Get current date and time
       id: datetime
@@ -931,7 +931,7 @@ jobs:
         cat build_rev.txt
         
     - name: Download all artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: artifacts/
         merge-multiple: false
@@ -1030,7 +1030,7 @@ jobs:
         
     - name: Create release and upload files
       if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/actions') }}
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         tag_name: auto-build-${{ steps.datetime.outputs.datetime }}
         name: Auto Build ${{ steps.datetime.outputs.date }} ${{ steps.datetime.outputs.time }}
